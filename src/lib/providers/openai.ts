@@ -12,7 +12,13 @@ export function buildProviderChatBody(profile: ModelProfile, body: CanonicalChat
   const { max_completion_tokens, ...withoutCompletionLimit } = providerInput;
   const outputLimit = max_completion_tokens ?? withoutCompletionLimit.max_tokens;
   const { max_tokens: _legacyLimit, ...providerFields } = withoutCompletionLimit;
-  return { ...providerFields, ...(outputLimit === undefined ? {} : { max_tokens: outputLimit }), model: profile.upstream, stream: true };
+  // GLM-5.3-Flash defaults to maximum reasoning effort, which can consume a
+  // small output budget before it emits any answer text. Prefer low effort
+  // when the caller has not expressed a reasoning preference.
+  const glmDefaults = profile.id === "nvidia/z-ai/glm-5.3-flash" && providerFields.reasoning_effort === undefined
+    ? { reasoning_effort: "low" }
+    : {};
+  return { ...providerFields, ...glmDefaults, ...(outputLimit === undefined ? {} : { max_tokens: outputLimit }), model: profile.upstream, stream: true };
 }
 
 export async function upstreamChat(profile: ModelProfile, credential: ReturnType<typeof listCredentials>[number], body: CanonicalChat, signal?: AbortSignal) {

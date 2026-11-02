@@ -34,7 +34,7 @@ try {
   for (const model of routes) {
     const started = Date.now(); let text = ''; let finish = false;
     try {
-      const stream = await api.chat.completions.create({ model, messages: [{ role: 'user', content: 'Reply with exactly FR_OK.' }], max_completion_tokens: 128, stream: true });
+      const stream = await api.chat.completions.create({ model, messages: [{ role: 'user', content: 'Reply with exactly FR_OK.' }], max_completion_tokens: 1024, ...((model.startsWith('fr-') || model.includes('glm-5.3-flash')) ? { reasoning_effort: 'low' } : {}), stream: true });
       for await (const chunk of stream) { const c = chunk.choices?.[0]; if (typeof c?.delta?.content === 'string') text += c.delta.content; if (c?.finish_reason) finish = true; }
       record(`Chat SSE ${model}`, text.length > 0 && finish ? 'passed' : 'failed', `${Date.now() - started} ms; ${text.length} visible chars; finish=${finish}`);
     } catch (error) { record(`Chat SSE ${model}`, 'failed', `HTTP ${error?.status || 'network'}${error?.code ? ` ${error.code}` : ''}`); }
