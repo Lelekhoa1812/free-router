@@ -89,3 +89,4 @@ dump/sbc/
 
 # Demo corpus output (demo/interview/corpus.py); regenerated, never committed.
 demo/interview/out/
+.vercel
