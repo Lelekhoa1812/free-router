@@ -11,6 +11,7 @@ import { hashClientKey } from "@/lib/crypto";
 import { normalizeChatEvent,parseSseData } from "@/lib/providers/sse";
 import Ajv from "ajv";
 import { jsonError, readJson } from "@/lib/http";
+import { clearModelOverload, isPersistedModelCoolingDown, recordModelOverload } from "@/lib/models/overload-breaker";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 const ajv=new Ajv({allErrors:true,strict:false,allowUnionTypes:true});
@@ -81,12 +82,14 @@ function streamChatResponse(args:{request:Request;rid:string;input:CanonicalChat
         try {
           await db.collection("requests").updateOne({requestId:rid},{$setOnInsert:{requestId:rid,keyId,requestedModel:input.model,status:"admitted",createdAt:new Date(),expiresAt:new Date(Date.now()+7*86400000),alias}}, {upsert:true});
           for(const profile of candidates.slice(0,3)){
+            if(await isPersistedModelCoolingDown(db,profile.provider,profile.upstream)){failures.push("503:model_overload_cooldown");continue;}
             const credentials=getProviderCredentials().filter(c=>c.provider===profile.provider);
             if(!credentials.length)continue;
             const ranked=await Promise.all(credentials.map(async c=>{const [h,b]=await Promise.all([db.collection<any>("credential_health").findOne({provider:profile.provider,fingerprint:c.fingerprint}),db.collection<any>("model_bindings").findOne({provider:profile.provider,model:profile.upstream,fingerprint:c.fingerprint})]);return{c,rank:b?.status==="healthy"?0:h?.authStatus==="healthy"?1:2};}));
             const ordered=[0,1,2].flatMap(rank=>{const group=ranked.filter(x=>x.rank===rank).map(x=>x.c);if(!group.length)return[];const start=(Date.now()+profile.id.length+rank)%group.length;return [...group.slice(start),...group.slice(0,start)]});
             for(const credential of ordered){
               if(dispatched>=3||aborter.signal.aborted)break;
+              if(await isPersistedModelCoolingDown(db,profile.provider,profile.upstream)){failures.push("503:model_overload_cooldown");break;}
               const lease=`${rid}:${profile.id}:${credential.slot}`;
               const scopes=["global",`client:${keyId}`,`provider:${profile.provider}:account:${credential.slot}`,`binding:${profile.id}:${credential.slot}`];
               try{
@@ -100,6 +103,7 @@ function streamChatResponse(args:{request:Request;rid:string;input:CanonicalChat
                 const attemptIndex=dispatched-1;
                 await db.collection<any>("requests").updateOne({requestId:rid},{$push:{attempts:{model:profile.id,provider:profile.provider,credentialSlot:credential.slot,status:"dispatched",startedAt:new Date()}},$set:{status:"connecting",model:profile.id,provider:profile.provider,credentialSlot:credential.slot}} as any);
                 const body=providerRequestBody(profile,input,alias);
+                const requestStartedAt=new Date();
                 const upstream=await upstreamChat(profile,credential,body,aborter.signal);
                 if(!upstream.ok||!upstream.body){
                   const code=await upstreamErrorCode(upstream);const status=`${upstream.status}${code?`:${code}`:""}`;failures.push(status);
@@ -109,10 +113,12 @@ function streamChatResponse(args:{request:Request;rid:string;input:CanonicalChat
                   else if([400,404,410].includes(upstream.status))await db.collection("model_bindings").updateOne({provider:profile.provider,model:profile.upstream,fingerprint:credential.fingerprint},{$set:{status:"unavailable",reason:`upstream_${upstream.status}`,checkedAt:new Date()}},{upsert:true});
                   else if(upstream.status===429)await db.collection("model_bindings").updateOne({provider:profile.provider,model:profile.upstream,fingerprint:credential.fingerprint},{$set:{cooldownUntil:retryAt(upstream),reason:"upstream_rate_limit",checkedAt:new Date()}},{upsert:true});
                   else if(upstream.status>=500)await db.collection("model_bindings").updateOne({provider:profile.provider,model:profile.upstream,fingerprint:credential.fingerprint},{$set:{cooldownUntil:new Date(Date.now()+30000),reason:"upstream_server_error",checkedAt:new Date()}},{upsert:true});
+                  if(upstream.status===503){await recordModelOverload(db,profile.provider,profile.upstream);break;}
                   continue;
                 }
                 await db.collection("credential_health").updateOne({provider:profile.provider,fingerprint:credential.fingerprint},{$set:{authStatus:"healthy",lastSuccessAt:new Date(),lastSuccessModel:profile.upstream}},{upsert:true});
                 await db.collection("model_bindings").updateOne({provider:profile.provider,model:profile.upstream,fingerprint:credential.fingerprint},{$set:{status:"healthy",lastSuccessAt:new Date()},$unset:{cooldownUntil:"",reason:""}},{upsert:true});
+                await clearModelOverload(db,profile.provider,profile.upstream,requestStartedAt);
                 await db.collection("requests").updateOne({requestId:rid},{$set:{status:"streaming",[`attempts.${attemptIndex}.status`]:"streaming",[`attempts.${attemptIndex}.headersAt`]:new Date()}});
                 activeReader=upstream.body.getReader();
                 const decoder=new TextDecoder();let buffer="",doneSent=false,semantic=false,roleSent=false,bufferedBytes=0,sawToolCall=false;
@@ -217,12 +223,14 @@ export async function POST(request: Request) {
   const db = await getDb();
   if(input.stream===true)return streamChatResponse({request,rid,input,keyId:String(auth.key._id),candidates,alias,db});
   for (const profile of candidates.slice(0, 3)) {
+    if(await isPersistedModelCoolingDown(db,profile.provider,profile.upstream)){failures.push("503:model_overload_cooldown");continue;}
     const credentials = getProviderCredentials().filter(c => c.provider === profile.provider);
     if (!credentials.length) continue;
     const ranked=await Promise.all(credentials.map(async c=>{const [h,b]=await Promise.all([db.collection<any>("credential_health").findOne({provider:profile.provider,fingerprint:c.fingerprint}),db.collection<any>("model_bindings").findOne({provider:profile.provider,model:profile.upstream,fingerprint:c.fingerprint})]);return{c,rank:b?.status==="healthy"?0:h?.authStatus==="healthy"?1:2,b}}));
     const ordered=[0,1,2].flatMap(rank=>{const group=ranked.filter(x=>x.rank===rank).map(x=>x.c);if(!group.length)return[];const start=(Date.now()+profile.id.length+rank)%group.length;return [...group.slice(start),...group.slice(0,start)]});
     for (const credential of ordered) {
       if(dispatched>=3)break;
+      if(await isPersistedModelCoolingDown(db,profile.provider,profile.upstream)){failures.push("503:model_overload_cooldown");break;}
       const lease = `${rid}:${profile.id}:${credential.slot}`;
       const scopes=[`global`, `client:${auth.key._id}`, `provider:${profile.provider}:account:${credential.slot}`, `binding:${profile.id}:${credential.slot}`];
       let admitted = false;
@@ -233,9 +241,19 @@ export async function POST(request: Request) {
         if (!admission.allowed) continue; admitted = true;
         const body = providerRequestBody(profile,input,alias);
         dispatched++;
+        const requestStartedAt=new Date();
         const upstream = await upstreamChat(profile, credential, body, request.signal);
-        if (!upstream.ok || !upstream.body) { const code=await upstreamErrorCode(upstream);failures.push(`${upstream.status}${code?`:${code}`:""}`);await releaseAdmission(scopes,lease);if(upstream.status===401)await db.collection("credential_health").updateOne({provider:profile.provider,fingerprint:credential.fingerprint},{$set:{authStatus:"invalid",checkedAt:new Date()}},{upsert:true});else if(upstream.status===400||upstream.status===404||upstream.status===410)await db.collection("model_bindings").updateOne({provider:profile.provider,model:profile.upstream,fingerprint:credential.fingerprint},{$set:{status:"unavailable",reason:`upstream_${upstream.status}`,checkedAt:new Date()}},{upsert:true});else if(upstream.status===429)await db.collection("model_bindings").updateOne({provider:profile.provider,model:profile.upstream,fingerprint:credential.fingerprint},{$set:{cooldownUntil:retryAt(upstream),reason:"upstream_rate_limit",checkedAt:new Date()}},{upsert:true});else if(upstream.status>=500)await db.collection("model_bindings").updateOne({provider:profile.provider,model:profile.upstream,fingerprint:credential.fingerprint},{$set:{cooldownUntil:new Date(Date.now()+30000),reason:"upstream_server_error",checkedAt:new Date()}},{upsert:true});continue; }
+        if (!upstream.ok || !upstream.body) {
+          const code=await upstreamErrorCode(upstream);failures.push(`${upstream.status}${code?`:${code}`:""}`);await releaseAdmission(scopes,lease);
+          if(upstream.status===401)await db.collection("credential_health").updateOne({provider:profile.provider,fingerprint:credential.fingerprint},{$set:{authStatus:"invalid",checkedAt:new Date()}},{upsert:true});
+          else if(upstream.status===400||upstream.status===404||upstream.status===410)await db.collection("model_bindings").updateOne({provider:profile.provider,model:profile.upstream,fingerprint:credential.fingerprint},{$set:{status:"unavailable",reason:`upstream_${upstream.status}`,checkedAt:new Date()}},{upsert:true});
+          else if(upstream.status===429)await db.collection("model_bindings").updateOne({provider:profile.provider,model:profile.upstream,fingerprint:credential.fingerprint},{$set:{cooldownUntil:retryAt(upstream),reason:"upstream_rate_limit",checkedAt:new Date()}},{upsert:true});
+          else if(upstream.status>=500)await db.collection("model_bindings").updateOne({provider:profile.provider,model:profile.upstream,fingerprint:credential.fingerprint},{$set:{cooldownUntil:new Date(Date.now()+30000),reason:"upstream_server_error",checkedAt:new Date()}},{upsert:true});
+          if(upstream.status===503){await recordModelOverload(db,profile.provider,profile.upstream);break;}
+          continue;
+        }
         await db.collection("credential_health").updateOne({provider:profile.provider,fingerprint:credential.fingerprint},{$set:{authStatus:"healthy",lastSuccessAt:new Date(),lastSuccessModel:profile.upstream}},{upsert:true});await db.collection("model_bindings").updateOne({provider:profile.provider,model:profile.upstream,fingerprint:credential.fingerprint},{$set:{status:"healthy",lastSuccessAt:new Date()},$unset:{cooldownUntil:"",reason:""}},{upsert:true});
+        await clearModelOverload(db,profile.provider,profile.upstream,requestStartedAt);
         const record = { requestId: rid, keyId: String(auth.key._id), requestedModel: input.model, model: profile.id, provider: profile.provider, credentialSlot: credential.slot, status: "streaming", createdAt: new Date(), expiresAt:new Date(Date.now()+7*86400000), alias };
         void db.collection("requests").insertOne(record).catch(() => undefined);
         const reader = upstream.body.getReader(); const decoder = new TextDecoder(); let buffer = ""; const events: unknown[] = [];

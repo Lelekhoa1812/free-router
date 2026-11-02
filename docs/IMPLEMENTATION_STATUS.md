@@ -23,7 +23,8 @@ This map keeps the implementation reviewable against the FreeRouter product plan
 | Python SDK compatibility | Not implemented | Add pinned Python SDK runner and test matrix |
 | Real quota/concurrency/fault suite | Not implemented | Isolated Redis/Mongo integration gates from product plan remain |
 | Live capability certification | Initial probe snapshot only | Re-run bounded current probes; no capability should be considered newly certified from this table |
-| Vercel deployment and Cursor acceptance | Not run | Requires deployment project/env and an end-to-end deployed Cursor workflow |
+| Vercel deployment | Deployed and smoke-tested | Production alias `https://free-router-olive.vercel.app`, deployment from commit `3225f10`; health/readiness, OpenAI SDK contracts, and real provider calls passed except two transient Google 503s documented in `OPERATIONS.md` |
+| Cursor acceptance | Not run | Still requires an end-to-end deployed Cursor workflow, including a real agent/tool loop and key revocation check |
 
 ## Immediate release blockers
 

@@ -55,7 +55,12 @@ export function StoragePanel() {
   useEffect(() => {
     void load();
     const timer = window.setInterval(() => { if (!document.hidden) void load(); }, 30_000);
-    return () => { window.clearInterval(timer); requestRef.current?.abort(); };
+    return () => {
+      window.clearInterval(timer);
+      const activeRequest = requestRef.current;
+      requestRef.current = null;
+      activeRequest?.abort();
+    };
   }, []);
 
   const usedBytes = snapshot ? snapshot.dataBytes + snapshot.indexBytes : null;
@@ -99,19 +104,20 @@ export function StoragePanel() {
 
     <div className="storage-lower-grid">
       <section className="panel section-card">
-        <div className="section-title"><div><h2>Retention & cleanup</h2><p>Logical expiry blocks access immediately; MongoDB TTL deletion runs asynchronously.</p></div><Clock3 size={17} /></div>
+        <div className="section-title"><div><h2>Retention & cleanup</h2><p>Expired records are removed by the daily bounded maintenance job.</p></div><Clock3 size={17} /></div>
         <div className="retention-list">
-          <div><span>Responses and tool continuation</span><b>24 hours</b></div>
-          <div><span>Temporary debug payloads</span><b>24 hours</b></div>
-          <div><span>Request metadata</span><b>7 days</b></div>
-          <div><span>Audit and probe history</span><b>30 days</b></div>
+          <div><span>Stored Responses state</span><b>24 hours · logical expiry</b></div>
+          <div><span>Request metadata</span><b>7 days · cleanup target</b></div>
+          <div><span>Audit and probe history</span><b>30 days · cleanup target</b></div>
+          <div><span>Debug content capture</span><b className="retention-unavailable">Not implemented</b></div>
         </div>
-        <div className="info-banner"><ShieldCheck size={16} /><span>Prompt and answer content is not stored in ordinary request metadata. Temporary debug capture is controlled separately.</span></div>
+        <div className="maintenance-summary"><span><i aria-hidden="true" /> Daily schedule · 16:00 UTC</span><small>Last-run counts are not currently retained.</small></div>
+        <div className="info-banner"><ShieldCheck size={16} /><span>Ordinary request metadata omits prompt and answer content. Response state is inaccessible after logical expiry; physical cleanup runs asynchronously.</span></div>
       </section>
       <section className="panel section-card">
         <div className="section-title"><div><h2>Coordination store</h2><p>Upstash Redis holds short-lived admission and coordination state.</p></div><Zap size={17} /></div>
-        <div className="coordination-summary"><div><span>Supplied capacity</span><b>64 MiB</b></div><div><span>Gateway target</span><b>&lt;16 MiB</b></div><div><span>Live memory sample</span><b className="muted">Not sampled</b></div></div>
-        <div className="info-banner"><Radio size={16} /><span>Admission counters use bounded windows and expiring leases. Live Redis memory and command telemetry are not currently exposed by the dashboard.</span></div>
+      <div className="coordination-summary"><div><span>Supplied database capacity</span><b>64 MiB</b></div><div><span>Gateway coordination target</span><b>&lt;16 MiB</b></div><div><span>Live memory usage</span><b className="muted">Not sampled</b></div><div><span>Redis command/bandwidth metrics</span><b className="muted">Not exposed</b></div></div>
+      <div className="info-banner"><Radio size={16} /><span>Admission counters use bounded windows and expiring leases. The supplied limit and gateway target are configuration values, not measured current usage.</span></div>
       </section>
     </div>
   </div>;
@@ -189,13 +195,13 @@ export function Playground({ models, onDone }: PlaygroundProps) {
         <label className="play-control token-control">Output budget <span className="token-field"><input className="field" type="number" min={16} max={8192} step={128} value={maxTokens} onChange={(event) => setMaxTokens(Math.min(8192, Math.max(16, Number(event.target.value) || 16)))} disabled={busy} /><small>tokens max</small></span></label>
       </div>
       <label className="play-control prompt-control">Prompt <textarea className="field prompt-area" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Ask a question or describe a coding task…" disabled={busy} /></label>
-      <div className="play-submit-row"><p><ShieldCheck size={14} /> Real provider quota is used. Prompt content is not added to ordinary request logs.</p>{busy ? <button className="button play-submit stop-request" onClick={() => { setPhase("Cancelling request…"); abortRef.current?.abort(); }}><span className="stop-square" /> Stop request</button> : <button className="button primary play-submit" onClick={() => void run()} disabled={!prompt.trim()}><Radio size={15} /> Send streamed request</button>}</div>
+      <div className="play-submit-row"><p><ShieldCheck size={14} /> Real provider quota is used. Prompt content is not added to ordinary request logs.<small>{prompt.length.toLocaleString()} characters · {readyModels.length} text models enabled</small></p>{busy ? <button className="button play-submit stop-request" onClick={() => { setPhase("Cancelling request…"); abortRef.current?.abort(); }}><span className="stop-square" /> Stop request</button> : <button className="button primary play-submit" onClick={() => void run()} disabled={!prompt.trim()}><Radio size={15} /> Send streamed request</button>}</div>
       {error && <div className="play-error" role="alert">{error}</div>}
     </section>
     <aside className="play-inspector" aria-labelledby="play-inspector-title">
       <div className="play-inspector-head"><div><span className="ops-kicker">OBSERVABILITY</span><h3 id="play-inspector-title">Run inspector</h3></div><span className={`run-state ${error ? "failed" : busy ? "running" : cancelled ? "idle" : metrics ? "complete" : "idle"}`}><i aria-hidden="true" />{error ? "Failed" : busy ? "In progress" : cancelled ? "Cancelled" : metrics ? "Complete" : "Idle"}</span></div>
       <div className="run-phase"><span className={busy ? "phase-pulse" : "phase-dot"} aria-hidden="true" />{phase}<small>{busy ? formatDuration(elapsed) : metrics ? formatDuration(metrics.durationMs || 0) : "—"}</small></div>
-      <div className="run-metrics-grid"><div><span>Time to first token</span><b>{formatDuration(metrics?.ttftMs ?? null)}</b></div><div><span>Approx. output rate</span><b>{throughput != null ? `${throughput.toFixed(1)} tok/s` : "—"}</b></div><div><span>Input tokens</span><b>{metrics?.usage?.prompt_tokens != null ? metrics.usage.prompt_tokens.toLocaleString() : "—"}</b></div><div><span>Output tokens</span><b>{metrics?.usage?.completion_tokens != null ? metrics.usage.completion_tokens.toLocaleString() : "—"}</b></div></div>
+      <div className="run-metrics-grid"><div><span>Time to first token</span><b>{formatDuration(metrics?.ttftMs ?? null)}</b></div><div><span>Total duration</span><b>{metrics?.durationMs != null ? formatDuration(metrics.durationMs) : busy ? formatDuration(elapsed) : "—"}</b></div><div><span>Approx. output rate</span><b>{throughput != null ? `${throughput.toFixed(1)} tok/s` : "—"}</b></div><div><span>Input tokens</span><b>{metrics?.usage?.prompt_tokens != null ? metrics.usage.prompt_tokens.toLocaleString() : "—"}</b></div><div><span>Output tokens</span><b>{metrics?.usage?.completion_tokens != null ? metrics.usage.completion_tokens.toLocaleString() : "—"}</b></div><div><span>Total tokens</span><b>{metrics?.usage?.total_tokens != null ? metrics.usage.total_tokens.toLocaleString() : "—"}</b></div></div>
       <p className="usage-note">Token counts are provider-reported; unavailable usage and rates are shown as —.</p>
       <div className="run-route"><span>Resolved model</span><b className="mono">{metrics?.resolvedModel || (busy ? model : "Awaiting request")}</b></div>
       <div className="run-route"><span>Provider / attempts</span><b>{metrics?.provider || "—"}{metrics?.attempts != null ? ` · ${metrics.attempts} upstream ${metrics.attempts === 1 ? "attempt" : "attempts"}` : ""}</b></div>

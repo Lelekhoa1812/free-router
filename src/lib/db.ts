@@ -22,6 +22,8 @@ export async function ensureIndexes() {
       db.collection("credential_health").createIndex({ provider: 1, fingerprint: 1 }, { unique: true, name: "credential_health_key" }),
       db.collection("credential_health").createIndex({ cooldownUntil: 1 }, { name: "credential_health_cooldown" }),
       db.collection("model_bindings").createIndex({ provider:1,model:1,fingerprint:1 },{unique:true,name:"model_binding_key"}),
+      db.collection("model_overload_breakers").createIndex({ provider:1,model:1 },{unique:true,name:"model_overload_breaker_key"}),
+      db.collection("model_overload_breakers").createIndex({ expiresAt:1 },{expireAfterSeconds:0,name:"model_overload_breaker_ttl"}),
       db.collection("responses").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0, name: "response_ttl" }),
       db.collection("responses").createIndex({ responseId: 1 }, { unique: true, name: "response_id" }),
       db.collection("responses").createIndex({ ownerId: 1, createdAt: -1 }, { name: "response_owner_time" }),

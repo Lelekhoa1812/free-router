@@ -15,7 +15,7 @@ import { POST } from "./route";
 describe("Chat Completions streaming startup",()=>{
   beforeEach(()=>{
     vi.clearAllMocks();
-    const collection={findOne:vi.fn().mockResolvedValue(null),updateOne:vi.fn().mockResolvedValue({}),insertOne:vi.fn().mockResolvedValue({})};
+    const collection={findOne:vi.fn().mockResolvedValue(null),updateOne:vi.fn().mockResolvedValue({}),insertOne:vi.fn().mockResolvedValue({}),deleteOne:vi.fn().mockResolvedValue({})};
     mocks.getDb.mockResolvedValue({collection:vi.fn(()=>collection)});
     mocks.authenticateClient.mockResolvedValue({key:{_id:"client-test",allowJevRouting:false}});
     mocks.consumeInternalClient.mockReturnValue(undefined);
@@ -89,5 +89,28 @@ describe("Chat Completions streaming startup",()=>{
     }));
     expect(response.status).toBe(200);
     expect(mocks.authenticateClient).not.toHaveBeenCalled();
+  });
+
+  it("stops credential rotation and records a shared breaker after a model 503",async()=>{
+    mocks.getProviderCredentials.mockReturnValue([
+      {provider:"google",slot:1,secret:"key-1",fingerprint:"fingerprint-1"},
+      {provider:"google",slot:2,secret:"key-2",fingerprint:"fingerprint-2"},
+      {provider:"google",slot:3,secret:"key-3",fingerprint:"fingerprint-3"},
+    ]);
+    const updates=vi.fn().mockResolvedValue({});
+    const collection={findOne:vi.fn().mockResolvedValue(null),updateOne:updates,insertOne:vi.fn().mockResolvedValue({}),deleteOne:vi.fn().mockResolvedValue({})};
+    mocks.getDb.mockResolvedValue({collection:vi.fn(()=>collection)});
+    mocks.upstreamChat.mockResolvedValue(new Response(JSON.stringify({error:{message:"model experiencing high demand"}}),{status:503}));
+    const response=await POST(new Request("https://freerouter.test/v1/chat/completions",{
+      method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({model:"google/gemini-3.6-flash",messages:[{role:"user",content:"Reply briefly"}]}),
+    }));
+    expect(response.status).toBe(503);
+    expect(mocks.upstreamChat).toHaveBeenCalledTimes(1);
+    expect(updates).toHaveBeenCalledWith(
+      {provider:"google",model:"gemini-3.6-flash"},
+      expect.any(Array),
+      {upsert:true},
+    );
   });
 });

@@ -1,6 +1,6 @@
 # FreeRouter operations guide
 
-Last reviewed: 2 November 2026. Provider catalogs, access, free quotas, and deployed behavior change. Re-run the documented checks before enabling a model or claiming compatibility.
+Last reviewed: 3 November 2026. Provider catalogs, access, free quotas, and deployed behavior change. Re-run the documented checks before enabling a model or claiming compatibility.
 
 ## Service layout
 
@@ -70,11 +70,22 @@ The optional classifier is disabled by default. It consumes one Jev request when
 
 ## Health and model removal
 
-The seed registry in `src/lib/models/catalog.ts` contains dated research and a `status` used to gate public model exposure. Models marked unavailable, restricted, or experimental are excluded from the concrete public model list and from aliases. Real upstream requests update credential and model-binding health. A 401 quarantines that credential; 404/retirement disables the affected binding; 429 and server errors create cooldowns. A failure in one account should not be treated as proof that the same model is unavailable in all independent accounts.
+The seed registry in `src/lib/models/catalog.ts` contains dated research and a `status` used to gate public model exposure. Models marked unavailable, restricted, or experimental are excluded from the concrete public model list and from aliases. Real upstream requests update credential and model-binding health. A 401 quarantines that credential; 404/retirement disables the affected binding; 429 and server errors create cooldowns. A failure in one account should not be treated as proof that the same model is unavailable in all independent accounts. An HTTP 503 also opens a provider/model-wide temporary overload breaker: first cooldown 30 seconds, then exponential backoff to a 5-minute cap for repeat failures within 10 minutes. The breaker is shared across all configured credentials for that exact model, and an active breaker removes the model from `/v1/models` and `/v1/models/{model}` without changing its permanent catalog status. Successful traffic after cooldown clears prior state unless a newer concurrent 503 has arrived. State expires after 15 minutes; no content or credential secret is stored in it.
 
 NVIDIA GLM-5.3-Flash always spends part of its output budget on reasoning. NVIDIA documents maximum reasoning effort as the default and warns that a small `max_tokens` allowance may end with no answer text. FreeRouter therefore sends `reasoning_effort: "low"` for this model when the caller leaves effort unspecified; explicit caller settings are preserved. Smoke calls should allow at least 1,024 output tokens and check for answer content plus a finish marker. See [NVIDIA's GLM-5.3-Flash guide](https://docs.nvidia.com/nim/large-language-models/2.1.4/get-started/advanced/get-started-glm-5.3-flash.html).
 
 After a repeatable live smoke failure, verify the exact provider model ID and rerun on another configured key before classifying the model as globally unavailable. Set its catalog status to `unavailable`, record the dated reason, and remove it from routing aliases. Do not treat a shared rate limit or provider outage as permanent model failure. Re-run type-check, tests, build, and model-list tests after catalog edits.
+
+### Production verification (3 November 2026)
+
+The production alias `https://free-router-olive.vercel.app` is serving commit `3225f10` as a Ready Vercel deployment. The deployed smoke suite ran at 2026-11-02 23:38 UTC (3 November Melbourne time), used a temporary client key, and confirmed it was revoked and removed afterward.
+
+- `/api/health/live`, `/api/health/ready`, and admin provider health returned HTTP 200. The OpenAI TypeScript SDK listed 21 models.
+- Both `fr-code` and `fr-auto` completed streamed Chat requests. Fourteen of sixteen concrete model routes completed streamed Chat requests; the only failures were `google/gemini-3.1-flash-lite-preview` and `google/gemini-3.1-flash-lite`.
+- Chat nonstreaming, required tool call plus continuation, vision streaming, strict JSON Schema, Responses streaming with `store:false`, and stored Responses retrieve/delete passed through the deployed API. Jev discovery, System One discovery, the OpenAI Decisions adapter, and native System One generation also passed.
+- Both failing Gemini routes returned HTTP 503 across three credential attempts. Direct Google AI Studio probes returned `UNAVAILABLE` with an explicit temporary high-demand message. Production request history also contains successful calls for both models. Treat this as a temporary shared-capacity incident and allow the model cooldown to expire before retesting; do not mark either model permanently unavailable on this evidence alone.
+
+The deployed smoke suite exited nonzero because of those two upstream 503s. These checks do not replace Cursor acceptance, multi-key quota/concurrency testing, the full provider capability matrix, or the remaining release gates below.
 
 ## Vercel deployment and rollback
 
