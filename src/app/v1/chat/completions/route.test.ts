@@ -51,4 +51,27 @@ describe("Chat Completions streaming startup",()=>{
     expect(output).toContain("data: [DONE]");
     expect(mocks.upstreamChat).toHaveBeenCalledTimes(1);
   });
+
+  it("uses fr-auto low effort as a fast-tier hint without forwarding an unsupported effort field",async()=>{
+    mocks.getProviderCredentials.mockReturnValue([{provider:"nvidia",slot:1,secret:"test-secret",fingerprint:"test-fingerprint"}]);
+    mocks.upstreamChat.mockImplementation(async(profile,_credential,body)=>{
+      expect(profile.id).toBe("nvidia/poolside/laguna-xs-2.1");
+      expect(body.reasoning_effort).toBeUndefined();
+      return new Response([
+        `data: ${JSON.stringify({choices:[{index:0,delta:{content:"FR_OK"},finish_reason:null}]})}\n\n`,
+        `data: ${JSON.stringify({choices:[{index:0,delta:{},finish_reason:"stop"}]})}\n\n`,
+        "data: [DONE]\n\n",
+      ].join(""),{status:200,headers:{"content-type":"text/event-stream"}});
+    });
+    const response=await POST(new Request("https://freerouter.test/v1/chat/completions",{
+      method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({model:"fr-auto",messages:[{role:"user",content:"A short question"}],reasoning_effort:"low",stream:true}),
+    }));
+    const reader=response.body!.getReader();let output="";
+    while(true){const item=await reader.read();if(item.done)break;output+=new TextDecoder().decode(item.value);}
+    expect(response.status).toBe(200);
+    expect(output).toContain("FR_OK");
+    expect(output).toContain("data: [DONE]");
+    expect(mocks.upstreamChat).toHaveBeenCalledTimes(1);
+  });
 });

@@ -26,6 +26,7 @@ async function classifyAuto(body:CanonicalChat,keyId:string,allowed:boolean) {
     if(!response.ok)return fallback;const data=await response.json() as any;const answer=data.answers?.category;const category=answer?.choice;if(Number(answer?.confidence??0)<.85||!["fast","code","quality","vision"].includes(category))return fallback;await redis.set(`fr:v1:jev:cache:${hash}`,category,{ex:900});return category;
   }catch{return fallback;}
 }
+function supportsReasoningEffort(profile:ModelProfile){return ["nvidia/z-ai/glm-5.3-flash","nvidia/deepseek-ai/deepseek-v4.1-flash","google/gemini-3.6-flash"].includes(profile.id);}
 function supportsRequest(profile: ModelProfile, body: CanonicalChat) {
   if (body.tools && body.tools.length && profile.tools !== "passed") return false;
   if (body.tools?.some((t:any)=>t?.function?.strict===true) && profile.schema !== "passed") return false;
@@ -34,9 +35,11 @@ function supportsRequest(profile: ModelProfile, body: CanonicalChat) {
   const hasImage = body.messages.some((m: any) => Array.isArray(m?.content) && m.content.some((p: any) => p?.type === "image_url"));
   if (hasImage && profile.vision !== "passed") return false;
   const effort = body.reasoning_effort;
-  if (effort && effort !== "medium" && !["nvidia/z-ai/glm-5.3-flash","nvidia/deepseek-ai/deepseek-v4.1-flash","google/gemini-3.6-flash"].includes(profile.id)) return false;
+  const fastAliasHint=body.model.startsWith("fr-")&&(effort==="low"||effort==="minimal")&&profile.latency==="fast";
+  if (effort && effort !== "medium" && !supportsReasoningEffort(profile) && !fastAliasHint) return false;
   return true;
 }
+function providerRequestBody(profile:ModelProfile,input:CanonicalChat,alias:boolean){const body:any={...input,model:profile.upstream,stream:true};const fastAliasHint=alias&&(input.reasoning_effort==="low"||input.reasoning_effort==="minimal")&&profile.latency==="fast";if(fastAliasHint&&!supportsReasoningEffort(profile))delete body.reasoning_effort;return body;}
 function validateGenerated(input:CanonicalChat,content:string,toolCalls:any[]){
   const format=input.response_format as any;
   if(format?.type==="json_object"){try{JSON.parse(content)}catch{return "invalid_json_output"}}
@@ -96,7 +99,7 @@ function streamChatResponse(args:{request:Request;rid:string;input:CanonicalChat
                 activeScopes=scopes;activeLease=lease;dispatched++;
                 const attemptIndex=dispatched-1;
                 await db.collection<any>("requests").updateOne({requestId:rid},{$push:{attempts:{model:profile.id,provider:profile.provider,credentialSlot:credential.slot,status:"dispatched",startedAt:new Date()}},$set:{status:"connecting",model:profile.id,provider:profile.provider,credentialSlot:credential.slot}} as any);
-                const body={...input,model:profile.upstream,stream:true};
+                const body=providerRequestBody(profile,input,alias);
                 const upstream=await upstreamChat(profile,credential,body,aborter.signal);
                 if(!upstream.ok||!upstream.body){
                   const code=await upstreamErrorCode(upstream);const status=`${upstream.status}${code?`:${code}`:""}`;failures.push(status);
@@ -227,7 +230,7 @@ export async function POST(request: Request) {
         const binding=await db.collection<any>("model_bindings").findOne({provider:profile.provider,model:profile.upstream,fingerprint:credential.fingerprint});if(binding?.status==="unavailable"||(binding?.cooldownUntil&&new Date(binding.cooldownUntil)>new Date())||((input.response_format as any)?.type==="json_schema"&&binding?.schemaStatus==="failed")||(input.tools as any[]|undefined)?.some(t=>t.function?.strict===true&&binding?.schemaStatus==="failed"))continue;
         const admission = await checkAdmission(scopes, lease);
         if (!admission.allowed) continue; admitted = true;
-        const body = { ...input, model: profile.upstream, stream: true };
+        const body = providerRequestBody(profile,input,alias);
         dispatched++;
         const upstream = await upstreamChat(profile, credential, body, request.signal);
         if (!upstream.ok || !upstream.body) { const code=await upstreamErrorCode(upstream);failures.push(`${upstream.status}${code?`:${code}`:""}`);await releaseAdmission(scopes,lease);if(upstream.status===401)await db.collection("credential_health").updateOne({provider:profile.provider,fingerprint:credential.fingerprint},{$set:{authStatus:"invalid",checkedAt:new Date()}},{upsert:true});else if(upstream.status===400||upstream.status===404||upstream.status===410)await db.collection("model_bindings").updateOne({provider:profile.provider,model:profile.upstream,fingerprint:credential.fingerprint},{$set:{status:"unavailable",reason:`upstream_${upstream.status}`,checkedAt:new Date()}},{upsert:true});else if(upstream.status===429)await db.collection("model_bindings").updateOne({provider:profile.provider,model:profile.upstream,fingerprint:credential.fingerprint},{$set:{cooldownUntil:retryAt(upstream),reason:"upstream_rate_limit",checkedAt:new Date()}},{upsert:true});else if(upstream.status>=500)await db.collection("model_bindings").updateOne({provider:profile.provider,model:profile.upstream,fingerprint:credential.fingerprint},{$set:{cooldownUntil:new Date(Date.now()+30000),reason:"upstream_server_error",checkedAt:new Date()}},{upsert:true});continue; }
