@@ -10,7 +10,7 @@ const results = [];
 let clientKeyId;
 let apiKey;
 let cookie;
-const record = (name, status, detail) => results.push({ name, status, ...(detail ? { detail } : {}) });
+const record = (name, status, detail) => { const item = { name, status, ...(detail ? { detail } : {}) }; results.push(item); console.log(JSON.stringify(item)); };
 const request = (path, init = {}) => fetch(`${base}${path}`, { ...init, headers: { ...(init.headers || {}), ...(cookie ? { cookie } : {}), origin } });
 try {
   const login = await request('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password }) });
@@ -30,7 +30,7 @@ try {
   record('OpenAI SDK models.list', modelList.data.length ? 'passed' : 'failed', `${modelList.data.length} visible models`);
 
   const exactModels = modelList.data.filter((m) => ['google', 'nvidia', 'openrouter'].includes(m.owned_by) && m.id.includes('/'));
-  const routes = [...new Set(['fr-code', 'fr-auto', ...exactModels.map((m) => m.id)])];
+  const routes = process.env.SMOKE_MODELS === 'false' ? [] : [...new Set(['fr-code', 'fr-auto', ...exactModels.map((m) => m.id)])];
   for (const model of routes) {
     const started = Date.now(); let text = ''; let finish = false;
     try {
@@ -41,41 +41,41 @@ try {
   }
 
   try {
-    const result = await api.chat.completions.create({ model: 'fr-code', messages: [{ role: 'user', content: 'Reply with exactly FR_OK.' }], stream: false, max_completion_tokens: 64 });
+    const result = await api.chat.completions.create({ model: 'fr-code', messages: [{ role: 'user', content: 'Reply with exactly FR_OK.' }], stream: false, reasoning_effort: 'low', max_completion_tokens: 512 });
     record('Chat nonstreaming response', typeof result.choices[0]?.message?.content === 'string' ? 'passed' : 'failed');
   } catch (error) { record('Chat nonstreaming response', 'failed', `HTTP ${error?.status || 'network'}${error?.code ? ` ${error.code}` : ''}`); }
 
   try {
     const tools = [{ type: 'function', function: { name: 'smoke_echo', description: 'Return a test value to verify the FreeRouter tool protocol.', parameters: { type: 'object', properties: { value: { type: 'string' } }, required: ['value'], additionalProperties: false } } }];
-    const first = await api.chat.completions.create({ model: 'fr-code', messages: [{ role: 'user', content: 'Call smoke_echo with value FR_TOOL.' }], tools, tool_choice: { type: 'function', function: { name: 'smoke_echo' } }, max_completion_tokens: 128 });
+    const first = await api.chat.completions.create({ model: 'fr-code', messages: [{ role: 'user', content: 'Call smoke_echo with value FR_TOOL.' }], tools, tool_choice: { type: 'function', function: { name: 'smoke_echo' } }, reasoning_effort: 'low', max_completion_tokens: 512 });
     const call = first.choices[0]?.message?.tool_calls?.[0];
     const args = call && JSON.parse(call.function.arguments);
     if (!call || args?.value !== 'FR_TOOL') throw new Error('required tool call was missing or invalid');
-    const second = await api.chat.completions.create({ model: 'fr-code', messages: [{ role: 'user', content: 'Call smoke_echo with value FR_TOOL.' }, first.choices[0].message, { role: 'tool', tool_call_id: call.id, content: 'FR_TOOL' }], tools, max_completion_tokens: 64 });
+    const second = await api.chat.completions.create({ model: 'fr-code', messages: [{ role: 'user', content: 'Call smoke_echo with value FR_TOOL.' }, first.choices[0].message, { role: 'tool', tool_call_id: call.id, content: 'FR_TOOL' }], tools, reasoning_effort: 'low', max_completion_tokens: 512 });
     record('Chat tool-call continuation', typeof second.choices[0]?.message?.content === 'string' ? 'passed' : 'failed');
   } catch (error) { record('Chat tool-call continuation', 'failed', `HTTP ${error?.status || 'contract'}${error?.code ? ` ${error.code}` : ''}`); }
 
   try {
     const image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j2Z0AAAAASUVORK5CYII=';
-    const stream = await api.chat.completions.create({ model: 'fr-vision', messages: [{ role: 'user', content: [{ type: 'text', text: 'Describe this image in a few words.' }, { type: 'image_url', image_url: { url: image } }] }], max_completion_tokens: 64, stream: true });
+    const stream = await api.chat.completions.create({ model: 'fr-vision', messages: [{ role: 'user', content: [{ type: 'text', text: 'Describe this image in a few words.' }, { type: 'image_url', image_url: { url: image } }] }], reasoning_effort: 'low', max_completion_tokens: 512, stream: true });
     let text = ''; for await (const chunk of stream) text += chunk.choices?.[0]?.delta?.content || '';
     record('Chat vision SSE', text.length > 0 ? 'passed' : 'failed', `${text.length} visible chars`);
   } catch (error) { record('Chat vision SSE', 'failed', `HTTP ${error?.status || 'network'}${error?.code ? ` ${error.code}` : ''}`); }
 
   try {
-    const json = await api.chat.completions.create({ model: 'fr-code', messages: [{ role: 'user', content: 'Return a JSON object with ok set to true.' }], response_format: { type: 'json_schema', json_schema: { name: 'smoke', strict: true, schema: { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false } } } });
+    const json = await api.chat.completions.create({ model: 'fr-code', messages: [{ role: 'user', content: 'Return a JSON object with ok set to true.' }], reasoning_effort: 'low', response_format: { type: 'json_schema', json_schema: { name: 'smoke', strict: true, schema: { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false } } } });
     const value = JSON.parse(json.choices[0].message.content); record('Chat strict JSON Schema', value.ok === true ? 'passed' : 'failed');
   } catch (error) { record('Chat strict JSON Schema', 'failed', `HTTP ${error?.status || 'network'}${error?.code ? ` ${error.code}` : ''}`); }
 
   try {
-    const response = await api.responses.create({ model: 'fr-code', input: 'Reply with exactly FR_OK.', store: false, stream: true });
+    const response = await api.responses.create({ model: 'fr-code', input: 'Reply with exactly FR_OK.', reasoning: { effort: 'low' }, store: false, stream: true });
     let terminal = false; let outputText = 0;
     for await (const event of response) { if (event.type === 'response.completed') terminal = true; if (event.type === 'response.output_text.delta') outputText += event.delta.length; }
     record('Responses SSE store:false', terminal && outputText > 0 ? 'passed' : 'failed', `text=${outputText}; completed=${terminal}`);
   } catch (error) { record('Responses SSE store:false', 'failed', `HTTP ${error?.status || 'network'}${error?.code ? ` ${error.code}` : ''}`); }
 
   try {
-    const response = await api.responses.create({ model: 'fr-code', input: 'Reply with exactly FR_OK.', store: true });
+    const response = await api.responses.create({ model: 'fr-code', input: 'Reply with exactly FR_OK.', reasoning: { effort: 'low' }, store: true });
     const retrieved = await api.responses.retrieve(response.id);
     const deleted = await api.responses.delete(response.id);
     record('Responses stored retrieve/delete', retrieved.id === response.id && deleted.deleted === true ? 'passed' : 'failed');
