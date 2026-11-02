@@ -1,0 +1,10 @@
+import { authenticateClient } from "@/lib/auth/client";
+import { env } from "@/lib/env";
+import { getDb } from "@/lib/db";
+import { readJson,jsonError } from "@/lib/http";
+import { callSystemOne } from "@/lib/jev";
+import { useDailyBudget } from "@/lib/redis";
+export const runtime="nodejs";
+export async function POST(request:Request){const auth=await authenticateClient(request,"decisions");if("error" in auth)return jsonError(401,"Invalid API key","invalid_api_key");let body:any;try{body=await readJson(request)}catch(e){const m=e instanceof Error?e.message:"Invalid JSON";return jsonError(m==="body_too_large"?413:m==="unsupported_content_type"||m==="unsupported_encoding"?415:400,m,"invalid_request")}
+ if(!body||typeof body!=="object"||!body.model||!("state" in body)||!body.questions||typeof body.questions!=="object")return jsonError(400,"model, state and questions are required","invalid_request");const entries=Object.entries(body.questions);if(!entries.length||entries.length>400)return jsonError(400,"questions must contain between 1 and 400 entries","invalid_request");if(entries.some(([,q]:any)=>q?.type==="box")||body.assets)return jsonError(400,"Image assets and box questions are disabled","unsupported_capability");
+ try{if(!await useDailyBudget(`jev-total:${auth.key._id}`,100))return jsonError(429,"Gateway Jev daily request allowance reached","rate_limit_exceeded");const response=await callSystemOne(body);const raw=await response.text();if(!response.ok)return new Response(raw,{status:response.status,headers:{"content-type":"application/json","cache-control":"no-store"}});const value=JSON.parse(raw);void getDb().then(db=>db.collection("requests").insertOne({requestId:`jev_${Date.now()}`,keyId:String(auth.key._id),requestedModel:body.model,model:value.model,provider:"jev",status:"completed",createdAt:new Date(),expiresAt:new Date(Date.now()+7*86400000),usage:value.usage})).catch(()=>undefined);return Response.json(value,{headers:{"cache-control":"no-store"}})}catch{return jsonError(503,env.jevKey?"Jev is unavailable":"Jev is not configured","jev_unavailable")}}

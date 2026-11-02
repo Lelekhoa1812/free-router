@@ -1,0 +1,4 @@
+import { getAdminSession } from "@/lib/auth/admin";
+import { getDb } from "@/lib/db";
+export const runtime="nodejs";
+export async function GET(){if(!await getAdminSession())return Response.json({error:"unauthorized"},{status:401});try{const db=await getDb();const stats=await db.command({dbStats:1});const names=["client_keys","requests","responses","metrics","debug_payloads","tool_metadata","audit_events","probe_results","model_registry","settings"];const collections=await Promise.all(names.map(async name=>{try{const s=await db.command({collStats:name});return{name,count:s.count||0,sizeBytes:s.size||0,indexBytes:s.totalIndexSize||0}}catch{return{name,count:0,sizeBytes:0,indexBytes:0}}}));return Response.json({database:db.databaseName,dataBytes:stats.dataSize||0,indexBytes:stats.indexSize||0,collections,observedAt:new Date().toISOString()})}catch{return Response.json({error:"storage_unavailable"},{status:503})}}

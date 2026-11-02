@@ -1,0 +1,46 @@
+# Implementation status and release gates
+
+This map keeps the implementation reviewable against the FreeRouter product plan. A check means the basic code path exists; it does not imply production certification.
+
+| Area | Status | Evidence / remaining gate |
+|---|---|---|
+| Next.js application, TypeScript, Vercel Node routes | Implemented | `src/app`, `vercel.json`, build check |
+| MongoDB only durable store | Implemented foundation | Mongo client pool and indexes exist; storage budget accounting and recovery remain |
+| Upstash atomic minute admission and expiring concurrency leases | Partial | Lua admission covers global/client/provider/model scopes; provider-specific daily/token limits, Redis epoch recovery, durable reservation journal remain |
+| Dashboard password, signed cookie, failed-login throttle | Implemented foundation | `/api/auth/*`; add CSRF/origin policy test and session invalidation suite |
+| Generated client keys, scope/model enforcement, revocation | Implemented foundation | `/api/admin/keys`; full limits/expiry/audit/cascade integration tests remain |
+| Google, NVIDIA, OpenRouter seed inventory | Implemented snapshot | `src/lib/models/catalog.ts`; daily discovery and full model/capability certification remain |
+| Chat Completions streaming/nonstreaming | Implemented foundation | `/v1/chat/completions`; provider-specific tests, schema validation, retry/quota classification, and SDK end-to-end suite remain |
+| Responses create/store/get/delete/input items | Implemented foundation | `/v1/responses`; compression/encryption and owner scope exist; state reservation, full item/event semantics, live SDK round trips remain |
+| Jev native System One | Implemented proxy | `/v1/systemone`; schema/cost/fault tests and authenticated smoke suite remain |
+| OpenAI Decisions adapter | Implemented adapter | `/v1/decisions`, typed mapping unit tests; live probability mapping/cost tests remain |
+| Jev internal `fr-auto` classifier | Implemented opt-in path | Settings acknowledgement, confidence/deadline/cache/daily request caps; shared token budgets, Jev outage breaker and behavior tests remain |
+| Admin dashboard | Initial operations UI | Overview, providers, model registry, routing view, keys, requests, playground, storage, settings; charts, editor actions, responsive/accessibility tests remain |
+| Temporary debug capture | Not implemented | Must be implemented and tested before any sensitive production traffic |
+| Mongo byte budgets, reservations, pressure cleanup | Not implemented | Must not claim storage safeguards until byte accounting and pressure tests pass |
+| Daily maintenance | Basic expired-record cleanup | `/api/cron/maintenance`; bounded delete batch only; daily summaries/counter reconciliation/pressure logic remain |
+| TypeScript SDK dependency | Added | `openai` pinned by lockfile; SDK network integration tests remain |
+| Python SDK compatibility | Not implemented | Add pinned Python SDK runner and test matrix |
+| Real quota/concurrency/fault suite | Not implemented | Isolated Redis/Mongo integration gates from product plan remain |
+| Live capability certification | Initial probe snapshot only | Re-run bounded current probes; no capability should be considered newly certified from this table |
+| Vercel deployment and Cursor acceptance | Not run | Requires deployment project/env and an end-to-end deployed Cursor workflow |
+
+## Immediate release blockers
+
+1. Add complete field validation and per-profile parameter translation, including Ajv-backed strict JSON Schema validation before output release.
+2. Add pre-output retry policy and provider failure classification for 401/403/404/410/429/5xx, with correct shared quota scopes and daily/token budgets.
+3. Implement Redis epoch recovery, Mongo admission journals, interruption-safe settlement, storage reservations, index/data budgets, pressure behavior, and cleanup reconciliation.
+4. Implement streamed Responses event forwarding, protocol-specific tool metadata preservation, and complete encrypted tool continuation state.
+5. Add status-changing model/capability certification workflow with authenticated, budgeted probes and explicit activation controls.
+6. Add admin CSRF/origin protections, audit all mutations, debug capture with bounded encryption/expiry, and key-state cascade/purge tests.
+7. Add official TypeScript and Python SDK contract suites, Redis/Mongo concurrency and fault injection, Playwright responsive/accessibility gates, live model certification, and deployed Cursor acceptance.
+
+## Verification commands
+
+```sh
+pnpm typecheck
+pnpm test
+pnpm build
+```
+
+Before a production deployment, run these plus the remaining gates above. Never add live credentials, generated client keys, or `.env` to Git.

@@ -1,0 +1,9 @@
+import {describe,expect,it} from "vitest";
+import {normalizeChatEvent,parseSseData} from "@/lib/providers/sse";
+const state=()=>({toolIndex:new Map<string,number>(),toolCallId:new Map<string,string>(),toolIds:new Map<number,Set<string>>(),finished:new Set<number>()});
+describe("provider SSE normalization",()=>{
+ it("normalizes public model, missing tool indices, and tool finish reasons",()=>{const s=state();const first=normalizeChatEvent({id:"x",model:"upstream",choices:[{index:0,delta:{tool_calls:[{id:"call-a",type:"function",function:{name:"run"}}]},finish_reason:null}]},"google/gemini-x",s,true);expect(first.model).toBe("google/gemini-x");expect(first.choices[0].delta.tool_calls[0].index).toBe(0);const end=normalizeChatEvent({choices:[{index:0,delta:{},finish_reason:"stop"}]},"google/gemini-x",s,true);expect(end.choices[0].finish_reason).toBe("tool_calls")});
+ it("filters unrequested usage-only chunks and duplicate finish chunks",()=>{const s=state();expect(normalizeChatEvent({choices:[],usage:{total_tokens:4}},"m",s,false)).toBeNull();normalizeChatEvent({choices:[{index:0,delta:{},finish_reason:"stop"}]},"m",s,true);expect(normalizeChatEvent({choices:[{index:0,delta:{},finish_reason:"stop"}]},"m",s,true)).toBeNull()});
+ it("keeps generated function-call IDs stable across fragments without upstream IDs",()=>{const s=state();const a=normalizeChatEvent({choices:[{index:0,delta:{tool_calls:[{index:0,function:{arguments:'{"x":'}}]},finish_reason:null}]},"m",s,true);const b=normalizeChatEvent({choices:[{index:0,delta:{tool_calls:[{index:0,function:{arguments:"1}"}}]},finish_reason:null}]},"m",s,true);expect(a.choices[0].delta.tool_calls[0].id).toBe(b.choices[0].delta.tool_calls[0].id)});
+ it("parses multiple data lines and CRLF separators",()=>{expect(parseSseData("event: chunk\r\ndata: {\r\ndata: \"x\"\r\n\r\n")).toEqual(["{",'"x"'])});
+});

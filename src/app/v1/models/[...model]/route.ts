@@ -1,0 +1,3 @@
+import { publicModels } from "@/lib/models/catalog";
+import { authenticateClient } from "@/lib/auth/client";
+export async function GET(request:Request, ctx: { params: Promise<{ model: string[] }> }) { const auth=await authenticateClient(request,"chat");if("error" in auth)return Response.json({error:{message:"Invalid API key",type:"authentication_error",code:"invalid_api_key"}},{status:401});const { model } = await ctx.params; const id = model.join("/"); const found = publicModels().find(m => m.id === id); return found ? Response.json(found) : Response.json({ error: { message: "Model not found", type: "invalid_request_error", code: "model_not_found" } }, { status: 404 }); }
