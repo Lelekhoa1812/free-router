@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { getDb } from "@/lib/db";
-import { authenticateClient } from "@/lib/auth/client";
+import { authenticateClient, consumeInternalClient } from "@/lib/auth/client";
 import { ALIASES, MODEL_BY_ID, type ModelProfile } from "@/lib/models/catalog";
 import { getProviderCredentials } from "@/lib/env";
 import { translateChatRequest, upstreamChat, type CanonicalChat } from "@/lib/providers/openai";
@@ -208,7 +208,8 @@ export async function POST(request: Request) {
   const rid = request.headers.get("x-request-id") || `fr_${randomUUID()}`;
   let input: CanonicalChat;
   try { input = translateChatRequest(await readJson(request)); } catch (e) { const m = e instanceof Error ? e.message : "Invalid request"; return jsonError(m === "body_too_large" ? 413 : m === "unsupported_content_type"||m==="unsupported_encoding" ? 415 : 400, m, "invalid_request", rid); }
-  const auth = await authenticateClient(request, "chat", input.model);
+  const internalClient = consumeInternalClient(request);
+  const auth = internalClient ? { key: internalClient } : await authenticateClient(request, "chat", input.model);
   if ("error" in auth) return jsonError(auth.error === "invalid_api_key" ? 401 : 403, auth.error === "invalid_api_key" ? "Invalid API key" : "API key cannot access this request", String(auth.error), rid);
   const alias = input.model.startsWith("fr-"); const category=input.model==="fr-auto"?await classifyAuto(input,String(auth.key._id),auth.key.allowJevRouting!==false):"code"; const declared = resolveCandidates(input.model,category); const candidates = declared.filter(p => supportsRequest(p,input));
   if (!candidates.length) return declared.length ? jsonError(400, "The selected model does not support one or more requested capabilities", "unsupported_capability", rid) : jsonError(404, "Unknown or unavailable model", "model_not_found", rid);

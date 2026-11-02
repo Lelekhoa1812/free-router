@@ -2,6 +2,11 @@ import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/db";
 import { hashClientKey } from "@/lib/crypto";
 export interface ClientKey { _id: ObjectId; name: string; scopes: string[]; models?: string[]; status: "active" | "revoked"; allowJevRouting?: boolean; }
+const trustedInternalClients = new WeakMap<Request, ClientKey>();
+/** Attach an already-validated client to an in-process route adapter request. */
+export function bindInternalClient(request: Request, key: ClientKey) { trustedInternalClients.set(request, key); }
+/** Consume only an in-memory binding; an HTTP header cannot forge this context. */
+export function consumeInternalClient(request: Request) { const key = trustedInternalClients.get(request); trustedInternalClients.delete(request); return key; }
 export async function authenticateClient(request: Request, scope: string, model?: string) {
   const raw = request.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
   if (!raw || !raw.startsWith("sk-fr-")) return { error: "invalid_api_key" as const };

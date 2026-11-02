@@ -8,7 +8,7 @@ const ATLAS_FREE_CAPACITY = 512 * MB;
 const APP_STORAGE_TARGET = 320 * MB;
 
 type CollectionStat = { name: string; count: number; sizeBytes: number; indexBytes: number };
-type StorageSnapshot = { database: string; dataBytes: number; indexBytes: number; collections: CollectionStat[]; observedAt: string };
+type StorageSnapshot = { database: string; dataBytes: number; indexBytes: number; collections: CollectionStat[]; collectionStatsComplete: boolean; observedAt: string };
 
 function formatBytes(value: number) {
   if (!Number.isFinite(value) || value < 0) return "—";
@@ -30,63 +30,71 @@ export function StoragePanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
+  const requestRef = useRef<AbortController | null>(null);
 
   async function load() {
+    if (requestRef.current) return;
+    const aborter = new AbortController();
+    requestRef.current = aborter;
     setLoading(true);
     try {
-      const response = await fetch("/api/admin/storage", { cache: "no-store" });
+      const response = await fetch("/api/admin/storage", { cache: "no-store", signal: aborter.signal });
       if (!response.ok) throw new Error(response.status === 503 ? "MongoDB storage statistics are temporarily unavailable." : "Could not load storage statistics.");
       const data = await response.json() as StorageSnapshot;
       setSnapshot(data);
       setError("");
       setLastChecked(new Date());
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not load storage statistics.");
+      if (!aborter.signal.aborted) setError(cause instanceof Error ? cause.message : "Could not load storage statistics.");
     } finally {
-      setLoading(false);
+      if (requestRef.current === aborter) requestRef.current = null;
+      if (!aborter.signal.aborted) setLoading(false);
     }
   }
 
   useEffect(() => {
     void load();
     const timer = window.setInterval(() => { if (!document.hidden) void load(); }, 30_000);
-    return () => window.clearInterval(timer);
+    return () => { window.clearInterval(timer); requestRef.current?.abort(); };
   }, []);
 
-  const usedBytes = (snapshot?.dataBytes || 0) + (snapshot?.indexBytes || 0);
-  const usedPct = Math.min(100, usedBytes / ATLAS_FREE_CAPACITY * 100);
-  const budgetPct = Math.min(100, usedBytes / APP_STORAGE_TARGET * 100);
+  const usedBytes = snapshot ? snapshot.dataBytes + snapshot.indexBytes : null;
+  const usedPct = usedBytes === null ? 0 : Math.min(100, usedBytes / ATLAS_FREE_CAPACITY * 100);
+  const budgetPct = usedBytes === null ? 0 : usedBytes / APP_STORAGE_TARGET * 100;
+  const overTarget = usedBytes !== null && usedBytes > APP_STORAGE_TARGET;
+  const nearClusterLimit = usedPct >= 90;
   const collections = useMemo(() => [...(snapshot?.collections || [])].sort((a, b) => (b.sizeBytes + b.indexBytes) - (a.sizeBytes + a.indexBytes)), [snapshot]);
   const biggest = collections[0];
+  const documentCount = collections.reduce((count, collection) => count + collection.count, 0);
 
   return <div className="storage-page">
     <section className="panel storage-capacity" aria-labelledby="storage-capacity-title">
       <div className="storage-capacity-copy">
         <div className="storage-section-kicker"><HardDrive size={14} /> MONGODB · {snapshot?.database || "FreeRouter database"}</div>
-        <div className="storage-capacity-title-row"><div><h2 id="storage-capacity-title">Database footprint</h2><p>Measured data and index sizes from the live MongoDB database.</p></div><div className="storage-capacity-actions"><span className={`storage-health ${error ? "is-error" : loading ? "is-pending" : ""}`}><i aria-hidden="true" />{error ? "Stats unavailable" : loading && !snapshot ? "Connecting" : "Live measurement"}</span><button className="button storage-refresh" onClick={() => void load()} disabled={loading}><RefreshCw size={13} className={loading ? "spin-icon" : ""} />{loading ? "Refreshing" : "Refresh stats"}</button></div></div>
+        <div className="storage-capacity-title-row"><div><h2 id="storage-capacity-title">Database footprint</h2><p>Measured data and index sizes from the live MongoDB database.</p></div><div className="storage-capacity-actions"><span className={`storage-health ${error ? "is-error" : loading ? "is-pending" : overTarget || nearClusterLimit ? "is-warning" : ""}`}><i aria-hidden="true" />{error ? snapshot ? "Stale sample" : "Stats unavailable" : loading ? snapshot ? "Refreshing sample" : "Connecting" : nearClusterLimit ? "Near cluster limit" : overTarget ? "Above app target" : "Live measurement"}</span><button className="button storage-refresh" onClick={() => void load()} disabled={loading}><RefreshCw size={13} className={loading ? "spin-icon" : ""} />{loading ? "Refreshing" : "Refresh stats"}</button></div></div>
         {error && <div className="storage-inline-error" role="alert">{error} <button className="text-button" onClick={() => void load()}>Retry</button></div>}
-        <div className="capacity-track" role="img" aria-label={`MongoDB uses ${formatBytes(usedBytes)} of 512 MB, ${usedPct.toFixed(1)} percent`}><span style={{ width: `${usedPct}%` }} /></div>
-        <div className="capacity-labels"><span><b>{formatBytes(usedBytes)}</b> used</span><span>512 MB free-cluster ceiling</span></div>
-        <div className="storage-budget"><span>Application target</span><div className="budget-track" role="img" aria-label={`Application target uses ${budgetPct.toFixed(1)} percent`}><span style={{ width: `${budgetPct}%` }} /></div><b>{formatBytes(APP_STORAGE_TARGET)}</b></div>
-        <small className="storage-measured-at">{lastChecked ? `Measured ${lastChecked.toLocaleTimeString()}` : "Waiting for first measurement"}{snapshot?.observedAt ? ` · database sample ${new Date(snapshot.observedAt).toLocaleTimeString()}` : ""}</small>
+        <div className={`capacity-track ${overTarget ? "over-target" : ""} ${nearClusterLimit ? "near-limit" : ""}`} role="img" aria-label={snapshot ? `MongoDB uses ${formatBytes(usedBytes!)} of 512 MB, ${usedPct.toFixed(1)} percent` : error ? "MongoDB storage usage unavailable" : "Loading MongoDB storage usage"}><span style={{ width: `${usedPct}%` }} /></div>
+        <div className="capacity-labels"><span><b>{formatBytes(usedBytes ?? Number.NaN)}</b>{snapshot ? ` used · ${usedPct.toFixed(1)}%` : " usage"}</span><span>512 MB free-cluster ceiling</span></div>
+        <div className={`storage-budget ${overTarget ? "over-target" : ""}`}><span>Application target</span><div className="budget-track" role="img" aria-label={snapshot ? `Application target usage is ${budgetPct.toFixed(1)} percent` : "Application target utilization unavailable"}><span style={{ width: `${Math.min(100, budgetPct)}%` }} /></div><b>{snapshot ? `${budgetPct.toFixed(0)}% · ${formatBytes(APP_STORAGE_TARGET)}` : formatBytes(APP_STORAGE_TARGET)}</b></div>
+        <small className="storage-measured-at">{lastChecked ? `${error ? "Last successful sample" : "Measured"} ${lastChecked.toLocaleTimeString()}${error ? " · stale" : ""}` : "Waiting for first measurement"}{snapshot?.observedAt ? ` · database sample ${new Date(snapshot.observedAt).toLocaleTimeString()}` : ""}</small>
       </div>
-      <div className="storage-footprint-number"><span>DATA + INDEXES</span><strong>{formatBytes(usedBytes)}</strong><small>of 512 MB cluster capacity</small></div>
+      <div className="storage-footprint-number"><span>DATA + INDEXES</span><strong>{formatBytes(usedBytes ?? Number.NaN)}</strong><small>of 512 MB cluster capacity</small></div>
     </section>
 
     <div className="storage-metrics">
-      <Metric label="Document data" value={formatBytes(snapshot?.dataBytes || 0)} detail="MongoDB dbStats · uncompressed" icon={Database} />
-      <Metric label="Indexes" value={formatBytes(snapshot?.indexBytes || 0)} detail="Included in free-tier storage" icon={Gauge} tone="blue" />
-      <Metric label="Collections" value={snapshot ? String(snapshot.collections.length) : "—"} detail={`${collections.reduce((n, c) => n + c.count, 0).toLocaleString()} documents observed`} icon={Activity} tone="green" />
+      <Metric label="Document data" value={formatBytes(snapshot?.dataBytes ?? Number.NaN)} detail="MongoDB dbStats · uncompressed" icon={Database} />
+      <Metric label="Indexes" value={formatBytes(snapshot?.indexBytes ?? Number.NaN)} detail="Included in free-tier storage" icon={Gauge} tone="blue" />
+      <Metric label="Collections" value={snapshot ? String(collections.length) : "—"} detail={snapshot?.collectionStatsComplete ? `${documentCount.toLocaleString()} documents measured` : snapshot ? "Partial collection stats" : "Document count unknown"} icon={Activity} tone="green" />
       <Metric label="Largest collection" value={biggest ? formatBytes(biggest.sizeBytes + biggest.indexBytes) : "—"} detail={biggest?.name || "No collection data yet"} icon={HardDrive} tone="amber" />
     </div>
 
     <section className="panel section-card storage-collections">
       <div className="section-title"><div><h2>Collection footprint</h2><p>Data and indexes by collection · sorted by combined size</p></div><span className="storage-refresh-note">{loading ? "Refreshing…" : lastChecked ? `Updated ${lastChecked.toLocaleTimeString()}` : "Waiting for data"}</span></div>
-      {snapshot && collections.length > 0 ? <div className="table-wrap"><table><thead><tr><th>Collection</th><th>Documents</th><th>Data</th><th>Indexes</th><th>Total</th><th>Share</th></tr></thead><tbody>{collections.map((collection) => {
+      {snapshot && collections.length > 0 ? <><div className="table-wrap"><table><thead><tr><th>Collection</th><th>Documents</th><th>Data</th><th>Indexes</th><th>Total</th><th>Share</th></tr></thead><tbody>{collections.map((collection) => {
         const total = collection.sizeBytes + collection.indexBytes;
         const share = usedBytes ? total / usedBytes * 100 : 0;
         return <tr key={collection.name}><td><b className="mono">{collection.name}</b></td><td>{collection.count.toLocaleString()}</td><td>{formatBytes(collection.sizeBytes)}</td><td>{formatBytes(collection.indexBytes)}</td><td><b>{formatBytes(total)}</b></td><td><div className="collection-share"><span><i style={{ width: `${share}%` }} /></span><small>{share.toFixed(1)}%</small></div></td></tr>;
-      })}</tbody></table></div> : <div className="storage-empty">{error ? "Collection measurements could not be loaded." : loading ? "Loading collection measurements…" : "No collection data is available yet."}</div>}
+      })}</tbody></table></div>{!snapshot.collectionStatsComplete && <div className="storage-partial-note" role="status">Some collection statistics could not be read; totals above use the database-wide sample.</div>}</> : <div className="storage-empty">{error ? "Collection measurements could not be loaded." : loading ? "Loading collection measurements…" : snapshot ? "No collections exist yet; database-wide usage is still measured." : "No collection data is available yet."}</div>}
     </section>
 
     <div className="storage-lower-grid">
@@ -110,7 +118,7 @@ export function StoragePanel() {
 }
 
 type PlaygroundProps = { models: any[]; onDone: (id: string) => void };
-type RunMetrics = { requestId?: string; resolvedModel?: string; durationMs?: number; ttftMs?: number | null; usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }; finishReason?: string };
+type RunMetrics = { requestId?: string; resolvedModel?: string; provider?: string; attempts?: number; durationMs?: number; ttftMs?: number | null; usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }; finishReason?: string };
 
 export function Playground({ models, onDone }: PlaygroundProps) {
   const [model, setModel] = useState("fr-code");
@@ -156,10 +164,10 @@ export function Playground({ models, onDone }: PlaygroundProps) {
           if (!dataLine) continue;
           if (eventName === "heartbeat") continue;
           const data = JSON.parse(dataLine);
-          if (eventName === "status") { setPhase(data.message || "Running"); setMetrics((current) => ({ ...current, requestId: data.requestId || current?.requestId, resolvedModel: data.resolvedModel || current?.resolvedModel })); }
+          if (eventName === "status") { setPhase(data.message || "Running"); setMetrics((current) => ({ ...current, requestId: data.requestId || current?.requestId, resolvedModel: data.resolvedModel || current?.resolvedModel, provider: data.provider || current?.provider, attempts: data.attempt ?? current?.attempts })); }
           if (eventName === "delta") { setPhase("Generating response"); setAnswer((current) => current + (data.content || "")); }
           if (eventName === "complete") { setMetrics(data); setPhase("Completed"); onDone(data.requestId || "playground"); }
-          if (eventName === "failure") { setMetrics((current) => ({ ...current, requestId: data.requestId || current?.requestId, durationMs: data.durationMs ?? current?.durationMs })); throw new Error(data.message || "The upstream request failed."); }
+          if (eventName === "failure") { setMetrics((current) => ({ ...current, requestId: data.requestId || current?.requestId, resolvedModel: data.resolvedModel || current?.resolvedModel, provider: data.provider || current?.provider, attempts: data.attempts ?? current?.attempts, durationMs: data.durationMs ?? current?.durationMs })); throw new Error(data.message || "The upstream request failed."); }
         }
       }
     } catch (cause) {
@@ -168,8 +176,10 @@ export function Playground({ models, onDone }: PlaygroundProps) {
     } finally { abortRef.current = null; setElapsed(Date.now() - started); setStartedAt(null); setBusy(false); }
   }
 
-  const throughput = metrics?.usage?.completion_tokens && metrics.durationMs ? metrics.usage.completion_tokens / (metrics.durationMs / 1000) : null;
+  const generationWindowMs = metrics?.durationMs !== undefined && metrics?.ttftMs != null ? metrics.durationMs - metrics.ttftMs : null;
+  const throughput = metrics?.usage?.completion_tokens != null && generationWindowMs !== null && generationWindowMs > 0 ? metrics.usage.completion_tokens / (generationWindowMs / 1000) : null;
   const readyModels = useMemo(() => models.filter((entry) => entry.status === "ready"), [models]);
+  const cancelled = !busy && phase === "Cancelled";
 
   return <div className="playground-layout">
     <section className="play-composer" aria-labelledby="play-composer-title">
@@ -183,10 +193,13 @@ export function Playground({ models, onDone }: PlaygroundProps) {
       {error && <div className="play-error" role="alert">{error}</div>}
     </section>
     <aside className="play-inspector" aria-labelledby="play-inspector-title">
-      <div className="play-inspector-head"><div><span className="ops-kicker">OBSERVABILITY</span><h3 id="play-inspector-title">Run inspector</h3></div><span className={`run-state ${error ? "failed" : busy ? "running" : metrics ? "complete" : "idle"}`}><i aria-hidden="true" />{error ? "Failed" : busy ? "In progress" : metrics ? "Complete" : "Idle"}</span></div>
+      <div className="play-inspector-head"><div><span className="ops-kicker">OBSERVABILITY</span><h3 id="play-inspector-title">Run inspector</h3></div><span className={`run-state ${error ? "failed" : busy ? "running" : cancelled ? "idle" : metrics ? "complete" : "idle"}`}><i aria-hidden="true" />{error ? "Failed" : busy ? "In progress" : cancelled ? "Cancelled" : metrics ? "Complete" : "Idle"}</span></div>
       <div className="run-phase"><span className={busy ? "phase-pulse" : "phase-dot"} aria-hidden="true" />{phase}<small>{busy ? formatDuration(elapsed) : metrics ? formatDuration(metrics.durationMs || 0) : "—"}</small></div>
-      <div className="run-metrics-grid"><div><span>Time to first token</span><b>{formatDuration(metrics?.ttftMs ?? null)}</b></div><div><span>Output speed</span><b>{throughput ? `${throughput.toFixed(1)} tok/s` : "—"}</b></div><div><span>Input tokens</span><b>{metrics?.usage?.prompt_tokens?.toLocaleString() || "—"}</b></div><div><span>Output tokens</span><b>{metrics?.usage?.completion_tokens?.toLocaleString() || "—"}</b></div></div>
+      <div className="run-metrics-grid"><div><span>Time to first token</span><b>{formatDuration(metrics?.ttftMs ?? null)}</b></div><div><span>Approx. output rate</span><b>{throughput != null ? `${throughput.toFixed(1)} tok/s` : "—"}</b></div><div><span>Input tokens</span><b>{metrics?.usage?.prompt_tokens != null ? metrics.usage.prompt_tokens.toLocaleString() : "—"}</b></div><div><span>Output tokens</span><b>{metrics?.usage?.completion_tokens != null ? metrics.usage.completion_tokens.toLocaleString() : "—"}</b></div></div>
+      <p className="usage-note">Token counts are provider-reported; unavailable usage and rates are shown as —.</p>
       <div className="run-route"><span>Resolved model</span><b className="mono">{metrics?.resolvedModel || (busy ? model : "Awaiting request")}</b></div>
+      <div className="run-route"><span>Provider / attempts</span><b>{metrics?.provider || "—"}{metrics?.attempts != null ? ` · ${metrics.attempts} upstream ${metrics.attempts === 1 ? "attempt" : "attempts"}` : ""}</b></div>
+      <div className="run-route"><span>Finish reason</span><b>{metrics?.finishReason || "Not available"}</b></div>
       <div className="run-route"><span>Request ID</span><b className="mono">{metrics?.requestId || "Assigned at admission"}</b></div>
       <div className="answer-panel"><div className="answer-panel-head"><span>STREAMED OUTPUT</span>{busy && <span className="answer-live"><i aria-hidden="true" /> Receiving tokens</span>}</div><pre aria-live="polite" aria-label="Model response">{answer || (busy ? "Waiting for the first model token…" : "The model response will appear here as it streams.")}</pre></div>
     </aside>

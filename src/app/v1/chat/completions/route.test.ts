@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks=vi.hoisted(()=>({
-  getDb:vi.fn(),authenticateClient:vi.fn(),getProviderCredentials:vi.fn(),upstreamChat:vi.fn(),checkAdmission:vi.fn(),releaseAdmission:vi.fn(),
+  getDb:vi.fn(),authenticateClient:vi.fn(),consumeInternalClient:vi.fn(),getProviderCredentials:vi.fn(),upstreamChat:vi.fn(),checkAdmission:vi.fn(),releaseAdmission:vi.fn(),
 }));
 
 vi.mock("@/lib/db",()=>({getDb:mocks.getDb}));
-vi.mock("@/lib/auth/client",()=>({authenticateClient:mocks.authenticateClient}));
+vi.mock("@/lib/auth/client",()=>({authenticateClient:mocks.authenticateClient,consumeInternalClient:mocks.consumeInternalClient}));
 vi.mock("@/lib/env",async()=>{const actual=await vi.importActual<any>("@/lib/env");return{...actual,getProviderCredentials:mocks.getProviderCredentials};});
 vi.mock("@/lib/providers/openai",async()=>{const actual=await vi.importActual<any>("@/lib/providers/openai");return{...actual,upstreamChat:mocks.upstreamChat};});
 vi.mock("@/lib/redis",()=>({checkAdmission:mocks.checkAdmission,releaseAdmission:mocks.releaseAdmission,getRedis:vi.fn(),useDailyBudgets:vi.fn()}));
@@ -18,6 +18,7 @@ describe("Chat Completions streaming startup",()=>{
     const collection={findOne:vi.fn().mockResolvedValue(null),updateOne:vi.fn().mockResolvedValue({}),insertOne:vi.fn().mockResolvedValue({})};
     mocks.getDb.mockResolvedValue({collection:vi.fn(()=>collection)});
     mocks.authenticateClient.mockResolvedValue({key:{_id:"client-test",allowJevRouting:false}});
+    mocks.consumeInternalClient.mockReturnValue(undefined);
     mocks.getProviderCredentials.mockReturnValue([{provider:"google",slot:1,secret:"test-secret",fingerprint:"test-fingerprint"}]);
     mocks.checkAdmission.mockResolvedValue({allowed:true});
     mocks.releaseAdmission.mockResolvedValue(undefined);
@@ -73,5 +74,20 @@ describe("Chat Completions streaming startup",()=>{
     expect(output).toContain("FR_OK");
     expect(output).toContain("data: [DONE]");
     expect(mocks.upstreamChat).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the outer Responses permission for a trusted adapter request",async()=>{
+    mocks.consumeInternalClient.mockReturnValueOnce({_id:"responses-only-client",allowJevRouting:false});
+    mocks.upstreamChat.mockResolvedValue(new Response([
+      `data: ${JSON.stringify({choices:[{index:0,delta:{content:"FR_OK"},finish_reason:null}]})}\n\n`,
+      `data: ${JSON.stringify({choices:[{index:0,delta:{},finish_reason:"stop"}]})}\n\n`,
+      "data: [DONE]\n\n",
+    ].join(""),{status:200,headers:{"content-type":"text/event-stream"}}));
+    const response=await POST(new Request("https://freerouter.test/v1/chat/completions",{
+      method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({model:"google/gemini-3.6-flash",messages:[{role:"user",content:"Reply FR_OK"}],stream:false}),
+    }));
+    expect(response.status).toBe(200);
+    expect(mocks.authenticateClient).not.toHaveBeenCalled();
   });
 });

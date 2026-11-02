@@ -69,7 +69,7 @@ export async function POST(request: Request) {
               if (!admission.allowed) { failure = `Admission is busy; retry after ${admission.retryAfter}s.`; continue; }
               reserved = true;
               attempts += 1;
-              send("status", { message: `Connecting to ${model.label || model.id}`, requestId, resolvedModel: model.id, attempt: attempts });
+              send("status", { message: `Connecting to ${model.label || model.id}`, requestId, resolvedModel: model.id, provider: model.provider, attempt: attempts });
               const upstream = await upstreamChat(model, credential, { ...body, model: model.upstream, stream: true }, aborter.signal);
               if (!upstream.ok || !upstream.body) {
                 failure = `Upstream returned HTTP ${upstream.status} for ${model.id}.`;
@@ -85,7 +85,7 @@ export async function POST(request: Request) {
               let finishReason: string | null = null;
               let usage: any;
               const tools = new Map<number, any>();
-              send("status", { message: `Streaming from ${model.label || model.id}`, requestId, resolvedModel: model.id, attempt: attempts });
+              send("status", { message: `Streaming from ${model.label || model.id}`, requestId, resolvedModel: model.id, provider: model.provider, attempt: attempts });
 
               while (!aborter.signal.aborted && !isClosed) {
                 const { done, value } = await reader.read();
@@ -125,7 +125,7 @@ export async function POST(request: Request) {
               if (!finishReason) {
                 failure = "The upstream stream ended before a finish reason was received.";
                 const completedAt = Date.now();
-                send("failure", { requestId, message: failure, durationMs: completedAt - startedAt, attempts });
+                send("failure", { requestId, message: failure, resolvedModel: model.id, provider: model.provider, durationMs: completedAt - startedAt, attempts });
                 isClosed = true;
                 controller.close();
                 return;

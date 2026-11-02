@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/db";
-import { authenticateClient } from "@/lib/auth/client";
+import { authenticateClient, bindInternalClient } from "@/lib/auth/client";
 import { encryptJson, decryptJson } from "@/lib/crypto";
 import { readJson, jsonError } from "@/lib/http";
 import { POST as chatCompletions } from "@/app/v1/chat/completions/route";
@@ -27,6 +27,141 @@ function responseObject(id: string, model: string, message: any, usage: any, cre
   for (const c of message?.tool_calls || []) output.push({ id: `fc_${c.id}`, type: "function_call", status: "completed", call_id: c.id, name: c.function.name, arguments: c.function.arguments });
   return { id, object: "response", created_at: created, status: "completed", error: null, incomplete_details: null, model, input, metadata:metadata||{}, output, output_text: typeof message?.content === "string" ? message.content : "", usage: usage ? { input_tokens: usage.prompt_tokens ?? 0, output_tokens: usage.completion_tokens ?? 0, total_tokens: usage.total_tokens ?? 0 } : null, store: true };
 }
+
+function streamResponses(chat: Response, options: { id: string; model: string; input: unknown; metadata?: Record<string,string>; created: number; store: boolean; messages: ChatMessage[]; ownerId: string }) {
+  const encoder = new TextEncoder();
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  let closed = false;
+  let sequence = 0;
+  const responseId = options.id;
+  const send = (controller: ReadableStreamDefaultController<Uint8Array>, type: string, fields: Record<string, unknown>) => {
+    if (closed) return;
+    const payload = { type, sequence_number: sequence++, ...fields };
+    controller.enqueue(encoder.encode(`event: ${type}\ndata: ${JSON.stringify(payload)}\n\n`));
+  };
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const base = { id: responseId, object: "response", created_at: options.created, status: "in_progress", error: null, incomplete_details: null, model: options.model, input: options.input, metadata: options.metadata || {}, output: [], output_text: "", usage: null, store: options.store };
+      send(controller, "response.created", { response: base });
+      send(controller, "response.in_progress", { response: base });
+      const heartbeat = setInterval(() => { if (!closed) controller.enqueue(encoder.encode(": keepalive\n\n")); }, 10_000);
+      void (async () => {
+        try {
+          if (!chat.body) throw new Error("The streamed Chat response has no body.");
+          reader = chat.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+          let content = "";
+          let usage: any;
+          let finishReason: string | null = null;
+          let sawDone = false;
+          let messageAdded = false;
+          let messageFinished = false;
+          let messageOutputIndex = -1;
+          let nextOutputIndex = 0;
+          const tools = new Map<number, { id: string; name: string; arguments: string; itemId: string; outputIndex: number; added: boolean }>();
+          const itemEvents = (chunk: any) => {
+            const choice = chunk?.choices?.[0];
+            const text = choice?.delta?.content;
+            if (typeof text === "string" && text) {
+              if (!messageAdded) {
+                messageAdded = true;
+                messageOutputIndex = nextOutputIndex++;
+                send(controller, "response.output_item.added", { output_index: messageOutputIndex, item: { id: `msg_${responseId}`, type: "message", status: "in_progress", role: "assistant", content: [] } });
+                send(controller, "response.content_part.added", { item_id: `msg_${responseId}`, output_index: messageOutputIndex, content_index: 0, part: { type: "output_text", text: "", annotations: [] } });
+              }
+              content += text;
+              send(controller, "response.output_text.delta", { item_id: `msg_${responseId}`, output_index: messageOutputIndex, content_index: 0, delta: text });
+            }
+            for (const call of choice?.delta?.tool_calls || []) {
+              const index = Number(call.index);
+              if (!Number.isInteger(index) || index < 0) throw new Error("The upstream returned an invalid tool-call index.");
+              const prior = tools.get(index) || { id: "", name: "", arguments: "", itemId: "", outputIndex: 0, added: false };
+              if (call.id) prior.id = call.id;
+              if (call.function?.name) prior.name += call.function.name;
+              if (call.function?.arguments) prior.arguments += call.function.arguments;
+              if (!prior.id) throw new Error("The upstream tool call has no stable call ID.");
+              if (!prior.added) {
+                prior.added = true;
+                prior.itemId = `fc_${prior.id}`;
+                prior.outputIndex = nextOutputIndex++;
+                send(controller, "response.output_item.added", { output_index: prior.outputIndex, item: { id: prior.itemId, type: "function_call", status: "in_progress", call_id: prior.id, name: prior.name, arguments: "" } });
+              }
+              if (call.function?.arguments) send(controller, "response.function_call_arguments.delta", { item_id: prior.itemId, output_index: prior.outputIndex, delta: call.function.arguments });
+              tools.set(index, prior);
+            }
+            if (choice?.finish_reason) finishReason = choice.finish_reason;
+            if (chunk?.usage) usage = chunk.usage;
+          };
+          const parseFrame = (frame: string) => {
+            const data = frame.split(/\r?\n/).filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trimStart()).join("\n");
+            if (!data) return;
+            if (data === "[DONE]") { sawDone = true; return; }
+            const parsed = JSON.parse(data);
+            if (parsed?.error) throw new Error(typeof parsed.error.message === "string" ? parsed.error.message : "The upstream stream failed.");
+            itemEvents(parsed);
+          };
+          while (!closed) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const frames = buffer.split(/\r?\n\r?\n/);
+            buffer = frames.pop() || "";
+            for (const frame of frames) parseFrame(frame);
+          }
+          buffer += decoder.decode();
+          if (buffer.trim()) parseFrame(buffer);
+          if (closed) return;
+          if (!sawDone || !finishReason) throw new Error("The upstream stream ended before a successful finish event.");
+          const message = { role: "assistant", content: content || null, ...(tools.size ? { tool_calls: [...tools.entries()].sort(([a],[b])=>a-b).map(([,tool])=>({ id: tool.id, type: "function", function: { name: tool.name, arguments: tool.arguments } })) } : {}) };
+          if (message.content !== null && !messageFinished) {
+            messageFinished = true;
+            const item = { id: `msg_${responseId}`, type: "message", status: "completed", role: "assistant", content: [{ type: "output_text", text: content, annotations: [] }] };
+            send(controller, "response.output_text.done", { item_id: item.id, output_index: messageOutputIndex, content_index: 0, text: content });
+            send(controller, "response.content_part.done", { item_id: item.id, output_index: messageOutputIndex, content_index: 0, part: item.content[0] });
+            send(controller, "response.output_item.done", { output_index: messageOutputIndex, item });
+          }
+          for (const tool of tools.values()) {
+            const item = { id: tool.itemId, type: "function_call", status: "completed", call_id: tool.id, name: tool.name, arguments: tool.arguments };
+            send(controller, "response.function_call_arguments.done", { item_id: item.id, output_index: tool.outputIndex, arguments: tool.arguments });
+            send(controller, "response.output_item.done", { output_index: tool.outputIndex, item });
+          }
+          const complete: any = responseObject(responseId, options.model, message, usage, options.created, options.input, options.metadata);
+          complete.store = options.store;
+          const outputByIndex: any[] = [];
+          if (message.content !== null) outputByIndex[messageOutputIndex] = complete.output.find((item: any) => item.type === "message");
+          for (const tool of tools.values()) outputByIndex[tool.outputIndex] = complete.output.find((item: any) => item.type === "function_call" && item.call_id === tool.id);
+          complete.output = outputByIndex.filter(Boolean);
+          if (finishReason === "length") {
+            complete.status = "incomplete";
+            complete.incomplete_details = { reason: "max_output_tokens" };
+          }
+          if (options.store) {
+            const expiresAt = new Date(Date.now()+86400000);
+            const snapshot = [...options.messages, message];
+            const payload = encryptJson({ messages: snapshot, response: complete }, `${options.ownerId}:${responseId}:response:v1:${expiresAt.toISOString()}`);
+            await (await getDb()).collection("responses").insertOne({ responseId, ownerId: options.ownerId, createdAt: new Date(), expiresAt, model: options.model, payload, expiresAtBytes: payload.body.length });
+          }
+          send(controller, complete.status === "incomplete" ? "response.incomplete" : "response.completed", { response: complete });
+          closed = true;
+          controller.close();
+        } catch (error) {
+          if (!closed) {
+            const failed = { id: responseId, object: "response", created_at: options.created, status: "failed", error: { type: "server_error", code: "upstream_stream_failed", message: error instanceof Error ? error.message : "The upstream response failed." }, incomplete_details: null, model: options.model, input: options.input, metadata: options.metadata || {}, output: [], output_text: "", usage: null, store: false };
+            send(controller, "response.failed", { response: failed });
+            closed = true;
+            controller.close();
+          }
+        } finally {
+          clearInterval(heartbeat);
+          await reader?.cancel().catch(() => undefined);
+        }
+      })();
+    },
+    async cancel() { closed = true; await reader?.cancel().catch(() => undefined); },
+  });
+  return new Response(stream, { headers: { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-store, no-transform", "x-request-id": responseId, "x-freerouter-resolved-model": chat.headers.get("x-freerouter-resolved-model") || options.model } });
+}
 export async function POST(request: Request) {
   const rid = request.headers.get("x-request-id") || `fr_${randomUUID()}`;
   let body: any; try { body = await readJson(request); } catch (e) { const m = e instanceof Error ? e.message : "Invalid JSON"; return jsonError(m === "body_too_large" ? 413 : m==="unsupported_content_type"||m==="unsupported_encoding"?415:400, m, "invalid_request", rid); }
@@ -50,13 +185,18 @@ export async function POST(request: Request) {
     if (unsupported) return jsonError(400,`${unsupported} is unsupported in v1`,"unsupported_parameter",rid);
     if (body.tools?.some((t:any)=>t.type!=="function")) return jsonError(400,"Only caller-executed function tools are supported","unsupported_tool",rid);
     const toolChoice=body.tool_choice?.type==="function"?{type:"function",function:{name:body.tool_choice.name}}:body.tool_choice;
-    const chatBody = { model: body.model, messages, stream: false, max_completion_tokens: body.max_output_tokens, tools: body.tools?.map((t:any)=>({type:"function",function:{name:t.name,description:t.description,parameters:t.parameters,strict:t.strict}})), tool_choice: toolChoice, parallel_tool_calls: body.parallel_tool_calls, response_format: body.text?.format ? body.text.format.type === "json_schema" ? {type:"json_schema",json_schema:{name:body.text.format.name,strict:body.text.format.strict,schema:body.text.format.schema}} : {type:body.text.format.type} : undefined, reasoning_effort: body.reasoning?.effort, store: false };
-    const internal = new Request("https://freerouter.local/v1/chat/completions", { method:"POST", headers:{authorization:request.headers.get("authorization")||"", "content-type":"application/json", "x-request-id":rid}, body:JSON.stringify(chatBody) });
+    const streaming = body.stream === true;
+    const chatBody = { model: body.model, messages, stream: streaming, ...(streaming?{stream_options:{include_usage:true}}:{}), max_completion_tokens: body.max_output_tokens, tools: body.tools?.map((t:any)=>({type:"function",function:{name:t.name,description:t.description,parameters:t.parameters,strict:t.strict}})), tool_choice: toolChoice, parallel_tool_calls: body.parallel_tool_calls, response_format: body.text?.format ? body.text.format.type === "json_schema" ? {type:"json_schema",json_schema:{name:body.text.format.name,strict:body.text.format.strict,schema:body.text.format.schema}} : {type:body.text.format.type} : undefined, reasoning_effort: body.reasoning?.effort, store: false };
+    const internal = new Request("https://freerouter.local/v1/chat/completions", { method:"POST", headers:{authorization:request.headers.get("authorization")||"", "content-type":"application/json", "x-request-id":rid}, body:JSON.stringify(chatBody), signal:request.signal });
+    bindInternalClient(internal, auth.key);
     const chat = await chatCompletions(internal); if (!chat.ok) return new Response(await chat.text(),{status:chat.status,headers:{"content-type":"application/json","cache-control":"no-store","x-request-id":rid}});
+    if (streaming) {
+      const id = `resp_${randomUUID().replaceAll("-","")}`;
+      return streamResponses(chat, { id, model: body.model, input: body.input, metadata: body.metadata, created: Math.floor(Date.now()/1000), store, messages, ownerId: String(auth.key._id) });
+    }
     const result = await chat.json() as any; const id = `resp_${randomUUID().replaceAll("-","")}`; const created = Math.floor(Date.now()/1000); const response = responseObject(id,body.model,result.choices?.[0]?.message,result.usage,created,body.input,body.metadata);
     if (store) { const expiresAt = new Date(Date.now()+86400000); const snapshot = [...messages, ...(result.choices?.[0]?.message ? [{role:"assistant",...result.choices[0].message}] : [])]; const payload=encryptJson({messages:snapshot,response},`${String(auth.key._id)}:${id}:response:v1:${expiresAt.toISOString()}`); await (await getDb()).collection("responses").insertOne({responseId:id,ownerId:String(auth.key._id),createdAt:new Date(),expiresAt,model:body.model,payload,expiresAtBytes:payload.body.length}); }
     response.store=store;
-    if (body.stream === true) { const enc=new TextEncoder();const events:any[]=[];let seq=0;const add=(type:string,fields:any)=>events.push({type,sequence_number:seq++,...fields});const progress={...response,status:"in_progress",output:[],output_text:""};add("response.created",{response:progress});add("response.in_progress",{response:progress});for(let i=0;i<response.output.length;i++){const item=response.output[i];add("response.output_item.added",{output_index:i,item:{...item,status:"in_progress"}});if(item.type==="message"){add("response.content_part.added",{item_id:item.id,output_index:i,content_index:0,part:{type:"output_text",text:"",annotations:[]}});const text=item.content?.[0]?.text||"";if(text)add("response.output_text.delta",{item_id:item.id,output_index:i,content_index:0,delta:text});add("response.output_text.done",{item_id:item.id,output_index:i,content_index:0,text});add("response.content_part.done",{item_id:item.id,output_index:i,content_index:0,part:item.content[0]});}else{add("response.function_call_arguments.delta",{item_id:item.id,output_index:i,delta:item.arguments});add("response.function_call_arguments.done",{item_id:item.id,output_index:i,arguments:item.arguments});}add("response.output_item.done",{output_index:i,item});}add("response.completed",{response});const stream=new ReadableStream({start(c){for(const event of events)c.enqueue(enc.encode(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`));c.close()}});return new Response(stream,{headers:{"content-type":"text/event-stream; charset=utf-8","cache-control":"no-store, no-transform","x-request-id":rid,"x-freerouter-resolved-model":chat.headers.get("x-freerouter-resolved-model")||body.model}}); }
     return Response.json(response,{headers:{"cache-control":"no-store","x-request-id":rid,"x-freerouter-resolved-model":chat.headers.get("x-freerouter-resolved-model")||body.model}});
   } catch(e) {const message=e instanceof Error?e.message:"Invalid request";if(message.includes("4 MiB")||message.includes("8 MiB"))return jsonError(413,message,"state_too_large",rid);if(message.includes("previous_response_id")||message.includes("Unsupported Responses input")||message.includes("Invalid input")||message.includes("input must"))return jsonError(400,message,"invalid_request",rid);return jsonError(503,"Responses state or persistence operation failed","response_state_unavailable",rid); }
 }
