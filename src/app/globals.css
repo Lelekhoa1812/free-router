@@ -55,6 +55,23 @@ tr:last-child td { border-bottom: none; }
 .jev-footnote{margin:12px 0 0;color:#85918a;font-size:10px;line-height:1.5}
 .jev-footnote code{color:#c8e8d5;font-family:ui-monospace,monospace}
 @media(max-width:480px){.jev-controls{align-items:stretch}.jev-controls>.button{flex:1 1 100%;white-space:normal}.jev-policy{gap:6px}.jev-policy span{font-size:9px}}
+
+/* Settings: keep utility actions compact and give the setup cards a calmer rhythm. */
+.settings-stack{max-width:1080px;gap:12px}
+.settings-stack .section-card.settings-card{margin:0;padding:19px 21px}
+.settings-card h2{font-size:13px;margin:0 0 5px}
+.settings-card .settings-description,.settings-card .settings-note{max-width:900px;margin:0;color:#9aa6ac;font-size:11px;line-height:1.65}
+.settings-card .settings-aliases{width:fit-content;max-width:100%;gap:6px;margin:13px 0;padding:5px 7px;border-color:#293239;background:#0c1013}
+.settings-aliases code{padding:6px 8px;border-radius:5px;background:#121a18;color:#c8e8d5;font-size:10px}
+.settings-aliases .icon-button{width:28px;height:28px}
+.settings-card .settings-note{color:#7f8b91;font-size:10px}
+.jev-controls .badge{min-height:28px;padding:4px 9px;font-size:9px}
+.jev-controls>.button{min-height:34px;padding:7px 11px;font-size:10px;font-weight:600}
+.jev-controls>.button.primary{box-shadow:0 1px 0 #ffffff12 inset}
+.jev-policy{gap:7px;margin-left:0}
+.jev-policy span{padding:6px 8px;font-size:9px}
+.jev-footnote{margin-top:10px;font-size:10px}
+@media(max-width:700px){.settings-stack .section-card.settings-card{padding:15px}.settings-card .settings-aliases{width:100%;gap:4px;justify-content:flex-start}.settings-aliases code{padding-inline:6px}}
 .brand-mark{overflow:hidden;padding:0;background:transparent}
 .brand-mark img{display:block;width:100%;height:100%;object-fit:cover}
 .provider-icon{overflow:hidden;flex:none}
