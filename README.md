@@ -51,4 +51,6 @@ pnpm test
 pnpm build
 ```
 
-See [API and routing contracts](docs/API_CONTRACTS.md) and [implementation status](docs/IMPLEMENTATION_STATUS.md) for contract details and the exact remaining release gates.
+`pnpm smoke:models` performs a bounded live streaming smoke call for each catalog-ready provider model using local `.env` credentials. After deployment, set `FREEROUTER_BASE_URL` and `ADMIN_PASSWORD`, then run `pnpm smoke:deployment` to verify health, issue a temporary client key, exercise the OpenAI SDK endpoints and visible model routes, and revoke/delete that key automatically. The deployed smoke includes one Jev Decisions call by default; set `SMOKE_JEV=false` to skip it if Jev credits should not be consumed.
+
+See [API and routing contracts](docs/API_CONTRACTS.md), the [operations guide](docs/OPERATIONS.md), and [implementation status](docs/IMPLEMENTATION_STATUS.md) for endpoint behavior, deployment steps, validation procedures, and remaining release gates.

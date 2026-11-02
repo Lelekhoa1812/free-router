@@ -7,12 +7,19 @@ export function resolveProfile(model: string): ModelProfile | undefined {
 }
 export function listCredentials(provider: ModelProfile["provider"]) { return getProviderCredentials().filter((c) => c.provider === provider); }
 
+export function buildProviderChatBody(profile: ModelProfile, body: CanonicalChat) {
+  const { store: _store, prompt_cache_key: _affinityHint, ...providerInput } = body;
+  const { max_completion_tokens, ...withoutCompletionLimit } = providerInput;
+  const outputLimit = max_completion_tokens ?? withoutCompletionLimit.max_tokens;
+  const { max_tokens: _legacyLimit, ...providerFields } = withoutCompletionLimit;
+  return { ...providerFields, ...(outputLimit === undefined ? {} : { max_tokens: outputLimit }), model: profile.upstream, stream: true };
+}
+
 export async function upstreamChat(profile: ModelProfile, credential: ReturnType<typeof listCredentials>[number], body: CanonicalChat, signal?: AbortSignal) {
   const { providers } = await import("@/lib/env");
   const config = providers.find((p) => p.id === profile.provider)!;
   const url = `${config.baseUrl}/chat/completions`;
-  const { store: _store, prompt_cache_key: _affinityHint, ...providerInput } = body;
-  const upstreamBody = { ...providerInput, model: profile.upstream, stream: true };
+  const upstreamBody = buildProviderChatBody(profile, body);
   const headers: Record<string, string> = { authorization: `Bearer ${credential.secret}`, "content-type": "application/json", accept: "text/event-stream" };
   if (profile.provider === "openrouter") { headers["HTTP-Referer"] = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://freerouter.local"; headers["X-Title"] = "FreeRouter"; }
   const response = await fetch(url, { method: "POST", headers, body: JSON.stringify(upstreamBody), signal, cache: "no-store" });

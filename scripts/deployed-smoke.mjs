@@ -1,0 +1,106 @@
+import nextEnv from '@next/env';
+import OpenAI from 'openai';
+const { loadEnvConfig } = nextEnv;
+loadEnvConfig(process.cwd());
+const base = (process.env.FREEROUTER_BASE_URL || '').replace(/\/$/, '');
+const password = process.env.ADMIN_PASSWORD;
+if (!base || !password) throw new Error('Set FREEROUTER_BASE_URL and ADMIN_PASSWORD in the local environment.');
+const origin = base;
+const results = [];
+let clientKeyId;
+let apiKey;
+let cookie;
+const record = (name, status, detail) => results.push({ name, status, ...(detail ? { detail } : {}) });
+const request = (path, init = {}) => fetch(`${base}${path}`, { ...init, headers: { ...(init.headers || {}), ...(cookie ? { cookie } : {}), origin } });
+try {
+  const login = await request('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password }) });
+  if (!login.ok) throw new Error(`Admin login failed (${login.status}); verify the production ADMIN_PASSWORD.`);
+  cookie = (login.headers.getSetCookie?.() || [login.headers.get('set-cookie') || '']).map((x) => x.split(';')[0]).join('; ');
+  const create = await request('/api/admin/keys', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: `deployed-smoke-${Date.now()}`, description: 'Temporary automated deployment verification', scopes: ['chat', 'responses', 'decisions'], models: ['*'] }) });
+  if (!create.ok) throw new Error(`Temporary client-key creation failed (${create.status}).`);
+  const issued = await create.json(); clientKeyId = issued.id; apiKey = issued.key;
+  const api = new OpenAI({ apiKey, baseURL: `${base}/v1`, maxRetries: 0, timeout: 300000 });
+
+  const [live, ready, adminProviders, modelList] = await Promise.all([
+    fetch(`${base}/api/health/live`), fetch(`${base}/api/health/ready`), request('/api/admin/providers'), api.models.list(),
+  ]);
+  record('health/live', live.ok ? 'passed' : 'failed', `HTTP ${live.status}`);
+  record('health/ready', ready.ok ? 'passed' : 'failed', `HTTP ${ready.status}`);
+  record('admin/provider health', adminProviders.ok ? 'passed' : 'failed', `HTTP ${adminProviders.status}`);
+  record('OpenAI SDK models.list', modelList.data.length ? 'passed' : 'failed', `${modelList.data.length} visible models`);
+
+  const exactModels = modelList.data.filter((m) => ['google', 'nvidia', 'openrouter'].includes(m.owned_by) && m.id.includes('/'));
+  const routes = [...new Set(['fr-code', 'fr-auto', ...exactModels.map((m) => m.id)])];
+  for (const model of routes) {
+    const started = Date.now(); let text = ''; let finish = false;
+    try {
+      const stream = await api.chat.completions.create({ model, messages: [{ role: 'user', content: 'Reply with exactly FR_OK.' }], max_completion_tokens: 128, stream: true });
+      for await (const chunk of stream) { const c = chunk.choices?.[0]; if (typeof c?.delta?.content === 'string') text += c.delta.content; if (c?.finish_reason) finish = true; }
+      record(`Chat SSE ${model}`, text.length > 0 && finish ? 'passed' : 'failed', `${Date.now() - started} ms; ${text.length} visible chars; finish=${finish}`);
+    } catch (error) { record(`Chat SSE ${model}`, 'failed', `HTTP ${error?.status || 'network'}${error?.code ? ` ${error.code}` : ''}`); }
+  }
+
+  try {
+    const result = await api.chat.completions.create({ model: 'fr-code', messages: [{ role: 'user', content: 'Reply with exactly FR_OK.' }], stream: false, max_completion_tokens: 64 });
+    record('Chat nonstreaming response', typeof result.choices[0]?.message?.content === 'string' ? 'passed' : 'failed');
+  } catch (error) { record('Chat nonstreaming response', 'failed', `HTTP ${error?.status || 'network'}${error?.code ? ` ${error.code}` : ''}`); }
+
+  try {
+    const tools = [{ type: 'function', function: { name: 'smoke_echo', description: 'Return a test value to verify the FreeRouter tool protocol.', parameters: { type: 'object', properties: { value: { type: 'string' } }, required: ['value'], additionalProperties: false } } }];
+    const first = await api.chat.completions.create({ model: 'fr-code', messages: [{ role: 'user', content: 'Call smoke_echo with value FR_TOOL.' }], tools, tool_choice: { type: 'function', function: { name: 'smoke_echo' } }, max_completion_tokens: 128 });
+    const call = first.choices[0]?.message?.tool_calls?.[0];
+    const args = call && JSON.parse(call.function.arguments);
+    if (!call || args?.value !== 'FR_TOOL') throw new Error('required tool call was missing or invalid');
+    const second = await api.chat.completions.create({ model: 'fr-code', messages: [{ role: 'user', content: 'Call smoke_echo with value FR_TOOL.' }, first.choices[0].message, { role: 'tool', tool_call_id: call.id, content: 'FR_TOOL' }], tools, max_completion_tokens: 64 });
+    record('Chat tool-call continuation', typeof second.choices[0]?.message?.content === 'string' ? 'passed' : 'failed');
+  } catch (error) { record('Chat tool-call continuation', 'failed', `HTTP ${error?.status || 'contract'}${error?.code ? ` ${error.code}` : ''}`); }
+
+  try {
+    const image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j2Z0AAAAASUVORK5CYII=';
+    const stream = await api.chat.completions.create({ model: 'fr-vision', messages: [{ role: 'user', content: [{ type: 'text', text: 'Describe this image in a few words.' }, { type: 'image_url', image_url: { url: image } }] }], max_completion_tokens: 64, stream: true });
+    let text = ''; for await (const chunk of stream) text += chunk.choices?.[0]?.delta?.content || '';
+    record('Chat vision SSE', text.length > 0 ? 'passed' : 'failed', `${text.length} visible chars`);
+  } catch (error) { record('Chat vision SSE', 'failed', `HTTP ${error?.status || 'network'}${error?.code ? ` ${error.code}` : ''}`); }
+
+  try {
+    const json = await api.chat.completions.create({ model: 'fr-code', messages: [{ role: 'user', content: 'Return a JSON object with ok set to true.' }], response_format: { type: 'json_schema', json_schema: { name: 'smoke', strict: true, schema: { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false } } } });
+    const value = JSON.parse(json.choices[0].message.content); record('Chat strict JSON Schema', value.ok === true ? 'passed' : 'failed');
+  } catch (error) { record('Chat strict JSON Schema', 'failed', `HTTP ${error?.status || 'network'}${error?.code ? ` ${error.code}` : ''}`); }
+
+  try {
+    const response = await api.responses.create({ model: 'fr-code', input: 'Reply with exactly FR_OK.', store: false, stream: true });
+    let terminal = false; let outputText = 0;
+    for await (const event of response) { if (event.type === 'response.completed') terminal = true; if (event.type === 'response.output_text.delta') outputText += event.delta.length; }
+    record('Responses SSE store:false', terminal && outputText > 0 ? 'passed' : 'failed', `text=${outputText}; completed=${terminal}`);
+  } catch (error) { record('Responses SSE store:false', 'failed', `HTTP ${error?.status || 'network'}${error?.code ? ` ${error.code}` : ''}`); }
+
+  try {
+    const response = await api.responses.create({ model: 'fr-code', input: 'Reply with exactly FR_OK.', store: true });
+    const retrieved = await api.responses.retrieve(response.id);
+    const deleted = await api.responses.delete(response.id);
+    record('Responses stored retrieve/delete', retrieved.id === response.id && deleted.deleted === true ? 'passed' : 'failed');
+  } catch (error) { record('Responses stored retrieve/delete', 'failed', `HTTP ${error?.status || 'network'}${error?.code ? ` ${error.code}` : ''}`); }
+
+  for (const [label, path] of [['Jev model discovery', '/models?type=decision'], ['System One model discovery', '/systemone/models']]) {
+    try { const res = await fetch(`${base}/v1${path}`, { headers: { authorization: `Bearer ${apiKey}` } }); const body = await res.json(); record(label, res.ok ? 'passed' : 'failed', `HTTP ${res.status}; models=${body.data?.length ?? body.models?.length ?? 'unknown'}`); } catch { record(label, 'failed', 'network or invalid JSON'); }
+  }
+  if (process.env.SMOKE_JEV !== 'false') {
+    try {
+      const response = await fetch(`${base}/v1/decisions`, { method: 'POST', headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' }, body: JSON.stringify({ model: 'jev/jev-latest', input: 'A production web service is returning HTTP 500 for all users.', questions: [{ type: 'predicate', name: 'urgent', instructions: 'Is immediate engineering action warranted?' }] }) });
+      const value = await response.json(); record('Jev OpenAI Decisions call', response.ok ? 'passed' : 'failed', `HTTP ${response.status}; answer=${value.answers?.[0]?.type || value.error?.code || 'missing'}`);
+    } catch { record('Jev OpenAI Decisions call', 'failed', 'network error'); }
+    try {
+      const response = await fetch(`${base}/v1/systemone`, { method: 'POST', headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' }, body: JSON.stringify({ model: 'jev-latest', state: 'A production web service is returning HTTP 500 for all users.', questions: { urgent: { type: 'noul', instructions: 'Is immediate engineering action warranted?' } } }) });
+      const value = await response.json(); record('Jev native System One call', response.ok ? 'passed' : 'failed', `HTTP ${response.status}; model=${value.model || value.error?.code || 'missing'}`);
+    } catch { record('Jev native System One call', 'failed', 'network error'); }
+  }
+} catch (error) {
+  record('deployment setup', 'failed', String(error?.message || error));
+} finally {
+  if (clientKeyId && cookie) {
+    await request(`/api/admin/keys/${clientKeyId}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'revoke' }) }).catch(() => undefined);
+    await request(`/api/admin/keys/${clientKeyId}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'delete' }) }).catch(() => undefined);
+  }
+}
+console.log(JSON.stringify({ base, testedAt: new Date().toISOString(), results }, null, 2));
+if (results.some((r) => r.status === 'failed')) process.exitCode = 1;

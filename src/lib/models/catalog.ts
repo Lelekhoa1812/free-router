@@ -25,7 +25,7 @@ const rows: Array<[Provider,string,string,number|null,number|null,CapabilityStat
   ["nvidia","z-ai/glm-5.3-flash","GLM 5.3 Flash",1048576,32768,"passed","passed","passed","unknown","standard","ready"],
   ["nvidia","deepseek-ai/deepseek-v4.1-flash","DeepSeek V4.1 Flash",1048576,32768,"passed","passed","failed","unknown","slow","experimental","Tool-call protocol needs normalization; schema probe failed."],
   ["nvidia","minimaxai/minimax-m3.1-flash","MiniMax M3.1 Flash",262144,32768,"passed","unknown","unknown","unknown","slow","experimental","Tool/schema probes timed out."],
-  ["nvidia","nvidia/nemotron-3.5-lightning-30b-a3b","Nemotron 3.5 Lightning",1000000,65536,"passed","passed","passed","unsupported","fast","ready"],
+  ["nvidia","nvidia/nemotron-3.5-lightning-30b-a3b","Nemotron 3.5 Lightning",1000000,65536,"failed","unsupported","unsupported","unsupported","unknown","unavailable","Live streaming smoke returned reasoning-only output without a user-visible answer; removed from public model routes pending a verified adapter setting."],
   ["nvidia","nvidia/nemotron-3.5-super-vl-120b-a12b","Nemotron 3.5 Super VL",1000000,131072,"passed","passed","passed","unknown","fast","ready"],
   ["nvidia","nvidia/nemotron-3-ultra-550b-a55b","Nemotron 3 Ultra 550B",1000000,65536,"passed","passed","passed","unsupported","fast","ready"],
   ["nvidia","nvidia/nemotron-3-nano-omni-30b-a3b-reasoning","Nemotron 3 Nano Omni",256000,65536,"passed","passed","passed","unknown","standard","ready"],

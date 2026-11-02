@@ -11,6 +11,8 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "smoke:models": "node scripts/live-model-smoke.mjs",
+    "smoke:deployment": "node scripts/deployed-smoke.mjs",
     "test:watch": "vitest"
   },
   "dependencies": {
@@ -26,6 +28,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@next/env": "16.4.4",
     "@tailwindcss/postcss": "^4.1.18",
     "@types/node": "^24.10.9",
     "@types/react": "^19.2.14",
