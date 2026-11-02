@@ -8,5 +8,11 @@ export const dynamic = "force-dynamic";
 export default async function Home() {
   const session = await getAdminSession();
   if (!session) return <LoginPage />;
-  return <DashboardShell />;
+  const todayLabel = new Intl.DateTimeFormat("en-AU", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "Australia/Melbourne",
+  }).format(new Date());
+  return <DashboardShell todayLabel={todayLabel} />;
 }

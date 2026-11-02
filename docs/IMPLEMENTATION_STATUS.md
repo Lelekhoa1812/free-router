@@ -15,7 +15,7 @@ This map keeps the implementation reviewable against the FreeRouter product plan
 | Jev native System One | Implemented proxy | `/v1/systemone`; schema/cost/fault tests and authenticated smoke suite remain |
 | OpenAI Decisions adapter | Implemented adapter | `/v1/decisions`, typed mapping unit tests; live probability mapping/cost tests remain |
 | Jev internal `fr-auto` classifier | Implemented opt-in path | Settings acknowledgement, confidence/deadline/cache/daily request caps; shared token budgets, Jev outage breaker and behavior tests remain |
-| Admin dashboard | Initial operations UI | Overview, providers, model registry, routing view, keys, requests, playground, storage, settings; charts, editor actions, responsive/accessibility tests remain |
+| Admin dashboard | Initial operations UI | Storage now reports MongoDB data/index and collection footprints against the 512 MB cluster ceiling plus the 320 MB application target; Redis memory remains explicitly unsampled. Playground streams admin Chat Completions output and reports route, request ID, TTFT, usage, duration, and cancellation. Charts, full editor actions, and responsive/accessibility automation remain |
 | Temporary debug capture | Not implemented | Must be implemented and tested before any sensitive production traffic |
 | Mongo byte budgets, reservations, pressure cleanup | Not implemented | Must not claim storage safeguards until byte accounting and pressure tests pass |
 | Daily maintenance | Basic expired-record cleanup | `/api/cron/maintenance`; bounded delete batch only; daily summaries/counter reconciliation/pressure logic remain |
