@@ -16,6 +16,16 @@ Input messages are sent in order. Image input is routed only to a profile certif
 
 The gateway requests upstream streaming even for nonstreaming Chat responses, assembles the response when the client asked for JSON, and normalizes public model IDs, tool indices, finish reasons, and optional usage in SSE. A stream error is an SSE error and is never terminated as a successful `[DONE]` response. The gateway retries only before a response stream is returned; requests already sent to the client are never spliced with another model answer.
 
+## Quota admission
+
+Chat Completions and the authenticated Playground pass through a local quota ledger before upstream dispatch. The ledger is configured by server environment variables and is not a public API. `QUOTA_MODE=observe` records request and token counters without blocking; `enforce` rejects a request that would exceed a configured per-minute or provider-local-day window; `off` bypasses the ledger.
+
+A local rejection is an HTTP 429 with code `quota_exhausted`, a bounded `Retry-After` computed from the exhausted window, and the usual `error` envelope. This code is distinct from an upstream provider 429, which uses the existing upstream classification and may surface as `rate_limit_exceeded`. A streamed request denied before dispatch receives an SSE error frame and no successful `[DONE]` frame.
+
+Reservations are per dispatched attempt: alias fallback and credential rotation can consume more than one request-window entry. Token reservations are settled once from provider-reported usage when available, otherwise from visible content and tool arguments. Failed or cancelled attempts release their token reservation, while dispatched request counters remain conservative. The dashboard projection is `GET /api/admin/quota`, requires an admin session, and is `no-store`.
+
+The configuration, provider group boundaries, defaults, and known limitations are in [QUOTA_ROUTING.md](QUOTA_ROUTING.md).
+
 ## Responses
 
 Responses input is converted into canonical chat messages for the selected model. Supported inputs include text, standard role messages, function calls, and function-call outputs. `instructions` apply to the current turn. `previous_response_id` is owner-scoped, expires after 24 hours, and carries compressed AES-256-GCM encrypted state with authenticated owner/resource/version/expiry data. A valid parent can be read when `store:false`, but the new response is not persisted.

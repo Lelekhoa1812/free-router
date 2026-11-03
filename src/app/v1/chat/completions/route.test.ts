@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks=vi.hoisted(()=>({
-  getDb:vi.fn(),authenticateClient:vi.fn(),consumeInternalClient:vi.fn(),getProviderCredentials:vi.fn(),upstreamChat:vi.fn(),checkAdmission:vi.fn(),releaseAdmission:vi.fn(),
+  getDb:vi.fn(),authenticateClient:vi.fn(),consumeInternalClient:vi.fn(),getProviderCredentials:vi.fn(),upstreamChat:vi.fn(),checkAdmission:vi.fn(),releaseAdmission:vi.fn(),reserveQuota:vi.fn(),settleQuota:vi.fn(),
 }));
 
 vi.mock("@/lib/db",()=>({getDb:mocks.getDb}));
@@ -9,6 +9,7 @@ vi.mock("@/lib/auth/client",()=>({authenticateClient:mocks.authenticateClient,co
 vi.mock("@/lib/providers/credentials",()=>({getProviderCredentials:mocks.getProviderCredentials}));
 vi.mock("@/lib/providers/openai",async()=>{const actual=await vi.importActual<any>("@/lib/providers/openai");return{...actual,upstreamChat:mocks.upstreamChat};});
 vi.mock("@/lib/redis",()=>({checkAdmission:mocks.checkAdmission,releaseAdmission:mocks.releaseAdmission,getRedis:vi.fn(),useDailyBudgets:vi.fn()}));
+vi.mock("@/lib/quota/ledger",async()=>{const actual=await vi.importActual<any>("@/lib/quota/ledger");return{...actual,reserveQuota:mocks.reserveQuota,settleQuota:mocks.settleQuota};});
 
 import { POST } from "./route";
 
@@ -22,6 +23,8 @@ describe("Chat Completions streaming startup",()=>{
     mocks.getProviderCredentials.mockReturnValue([{provider:"google",slot:1,secret:"test-secret",fingerprint:"test-fingerprint"}]);
     mocks.checkAdmission.mockResolvedValue({allowed:true});
     mocks.releaseAdmission.mockResolvedValue(undefined);
+    mocks.reserveQuota.mockResolvedValue({allowed:true});
+    mocks.settleQuota.mockResolvedValue(true);
   });
   afterEach(()=>vi.restoreAllMocks());
 
@@ -112,6 +115,59 @@ describe("Chat Completions streaming startup",()=>{
     }));
     expect(response.status).toBe(200);
     expect(mocks.authenticateClient).not.toHaveBeenCalled();
+  });
+
+  it("returns a distinct quota error and Retry-After when the local ledger denies a request",async()=>{
+    mocks.reserveQuota.mockResolvedValue({allowed:false,reason:"request_day",retryAfterMs:120_000});
+    const response=await POST(new Request("https://freerouter.test/v1/chat/completions",{
+      method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({model:"google/gemini-3.6-flash",messages:[{role:"user",content:"Reply briefly"}]}),
+    }));
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("120");
+    await expect(response.json()).resolves.toMatchObject({error:{code:"quota_exhausted"}});
+    expect(mocks.upstreamChat).not.toHaveBeenCalled();
+    expect(mocks.releaseAdmission).toHaveBeenCalledTimes(1);
+  });
+
+  it("releases admission when quota reservation fails before dispatch",async()=>{
+    mocks.reserveQuota.mockRejectedValue(new Error("quota ledger unavailable"));
+    const response=await POST(new Request("https://freerouter.test/v1/chat/completions",{
+      method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({model:"google/gemini-3.6-flash",messages:[{role:"user",content:"Reply briefly"}],stream:true}),
+    }));
+    await response.text();
+    expect(response.headers.get("content-type")).toContain("text/event-stream");
+    expect(mocks.upstreamChat).not.toHaveBeenCalled();
+    expect(mocks.releaseAdmission).toHaveBeenCalledTimes(1);
+  });
+
+  it("streams a quota error frame when the local ledger denies before dispatch",async()=>{
+    mocks.reserveQuota.mockResolvedValue({allowed:false,reason:"request_minute",retryAfterMs:30_000});
+    const response=await POST(new Request("https://freerouter.test/v1/chat/completions",{
+      method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({model:"google/gemini-3.6-flash",messages:[{role:"user",content:"Reply briefly"}],stream:true}),
+    }));
+    expect(response.headers.get("content-type")).toContain("text/event-stream");
+    const output=await response.text();
+    expect(output).toContain('"code":"quota_exhausted"');
+    expect(mocks.upstreamChat).not.toHaveBeenCalled();
+  });
+
+  it("settles a completed non-streaming reservation with its usage",async()=>{
+    const reservation={id:"fr_test",target:{provider:"google",group:"default",model:"google/gemini-3.6-flash",scope:"model",limits:{rpm:5},timeZone:"UTC"},estimate:100,mode:"enforce",keys:["a","b","c","d"],resetAt:new Date(),minuteResetSeconds:60,dayResetSeconds:60,dayTtl:3600};
+    mocks.reserveQuota.mockResolvedValue({allowed:true,reservation});
+    mocks.upstreamChat.mockResolvedValue(new Response([
+      `data: ${JSON.stringify({choices:[{index:0,delta:{content:"FR_OK"},finish_reason:null}]})}\n\n`,
+      `data: ${JSON.stringify({choices:[{index:0,delta:{},finish_reason:"stop"}],usage:{prompt_tokens:2,completion_tokens:1,total_tokens:3}})}\n\n`,
+      "data: [DONE]\n\n",
+    ].join(""),{status:200,headers:{"content-type":"text/event-stream"}}));
+    const response=await POST(new Request("https://freerouter.test/v1/chat/completions",{
+      method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({model:"google/gemini-3.6-flash",messages:[{role:"user",content:"Reply FR_OK"}]}),
+    }));
+    expect(response.status).toBe(200);
+    expect(mocks.settleQuota).toHaveBeenCalledWith(reservation,expect.objectContaining({outcome:"completed"}));
   });
 
   it("stops credential rotation and records a shared breaker after a model 503",async()=>{
