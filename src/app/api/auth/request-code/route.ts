@@ -1,11 +1,18 @@
 import { NextRequest } from "next/server";
-import { allowCodeSend, ensureInitialPassword, listAdminUsers, normalizeAdminEmail, seedBootstrapUser, sendAccessPassword, markPasswordSent, validAdminEmail, sendPasswordToAll } from "@/lib/auth/access";
+import { adminLoginRequiresEmail, allowCodeSend, ensureInitialPassword, listAdminUsers, normalizeAdminEmail, seedBootstrapUser, sendAccessPassword, markPasswordSent, validAdminEmail, sendPasswordToAll } from "@/lib/auth/access";
 import { jsonError, readJson, sameOrigin } from "@/lib/http";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
   if (!sameOrigin(request)) return jsonError(403, "Cross-origin request rejected", "cross_origin_request");
+  try {
+    if (!await adminLoginRequiresEmail()) {
+      return jsonError(410, "Email password delivery is disabled. Sign in with the shared password.", "email_password_delivery_disabled");
+    }
+  } catch {
+    return jsonError(503, "Sign-in is temporarily unavailable", "authentication_unavailable");
+  }
   let body: unknown;
   try { body = await readJson(request, 4096); } catch { return jsonError(400, "Invalid request", "invalid_request"); }
   const rawEmail = body && typeof body === "object" ? (body as Record<string, unknown>).email : undefined;

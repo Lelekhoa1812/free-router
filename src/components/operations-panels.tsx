@@ -8,7 +8,7 @@ const ATLAS_FREE_CAPACITY = 512 * MB;
 const APP_STORAGE_TARGET = 320 * MB;
 
 type CollectionStat = { name: string; count: number; sizeBytes: number; indexBytes: number };
-type StorageSnapshot = { database: string; dataBytes: number; indexBytes: number; collections: CollectionStat[]; collectionStatsComplete: boolean; observedAt: string };
+type StorageSnapshot = { database: string; dataBytes: number; indexBytes: number; collections: CollectionStat[]; collectionStatsComplete: boolean; coordination?: { status: "available" | "unavailable"; keyCount: number | null; pingMs: number | null; sampledAt: string }; observedAt: string };
 
 function formatBytes(value: number) {
   if (!Number.isFinite(value) || value < 0) return "—";
@@ -54,7 +54,7 @@ export function StoragePanel() {
 
   useEffect(() => {
     void load();
-    const timer = window.setInterval(() => { if (!document.hidden) void load(); }, 30_000);
+    const timer = window.setInterval(() => { if (!document.hidden) void load(); }, 60_000);
     return () => {
       window.clearInterval(timer);
       const activeRequest = requestRef.current;
@@ -116,8 +116,8 @@ export function StoragePanel() {
       </section>
       <section className="panel section-card">
         <div className="section-title"><div><h2>Coordination store</h2><p>Upstash Redis holds short-lived admission and coordination state.</p></div><Zap size={17} /></div>
-      <div className="coordination-summary"><div><span>Supplied database capacity</span><b>64 MiB</b></div><div><span>Gateway coordination target</span><b>&lt;16 MiB</b></div><div><span>Live memory usage</span><b className="muted">Not sampled</b></div><div><span>Redis command/bandwidth metrics</span><b className="muted">Not exposed</b></div></div>
-      <div className="info-banner"><Radio size={16} /><span>Admission counters use bounded windows and expiring leases. The supplied limit and gateway target are configuration values, not measured current usage.</span></div>
+      <div className="coordination-summary"><div><span>Supplied database capacity</span><b>64 MiB</b></div><div><span>Gateway coordination target</span><b>&lt;16 MiB</b></div><div><span>Redis database keys</span><b className={snapshot?.coordination?.status === "available" ? "" : "muted"}>{snapshot?.coordination?.status === "available" ? snapshot.coordination.keyCount?.toLocaleString() ?? "—" : "Unavailable"}</b></div><div><span>Redis round-trip</span><b className={snapshot?.coordination?.pingMs != null ? "" : "muted"}>{snapshot?.coordination?.pingMs != null ? formatDuration(snapshot.coordination.pingMs) : "—"}</b></div></div>
+      <div className="info-banner"><Radio size={16} /><span>Redis key count and PING round-trip are sampled live; key count covers the supplied Redis database, while memory and billing metrics are not exposed by this endpoint. Admission counters use bounded windows and expiring leases.</span></div>
       </section>
     </div>
   </div>;
@@ -201,7 +201,7 @@ export function Playground({ models, onDone }: PlaygroundProps) {
     <aside className="play-inspector" aria-labelledby="play-inspector-title">
       <div className="play-inspector-head"><div><span className="ops-kicker">OBSERVABILITY</span><h3 id="play-inspector-title">Run inspector</h3></div><span className={`run-state ${error ? "failed" : busy ? "running" : cancelled ? "idle" : metrics ? "complete" : "idle"}`}><i aria-hidden="true" />{error ? "Failed" : busy ? "In progress" : cancelled ? "Cancelled" : metrics ? "Complete" : "Idle"}</span></div>
       <div className="run-phase"><span className={busy ? "phase-pulse" : "phase-dot"} aria-hidden="true" />{phase}<small>{busy ? formatDuration(elapsed) : metrics ? formatDuration(metrics.durationMs || 0) : "—"}</small></div>
-      <div className="run-metrics-grid"><div><span>Time to first token</span><b>{formatDuration(metrics?.ttftMs ?? null)}</b></div><div><span>Total duration</span><b>{metrics?.durationMs != null ? formatDuration(metrics.durationMs) : busy ? formatDuration(elapsed) : "—"}</b></div><div><span>Approx. output rate</span><b>{throughput != null ? `${throughput.toFixed(1)} tok/s` : "—"}</b></div><div><span>Input tokens</span><b>{metrics?.usage?.prompt_tokens != null ? metrics.usage.prompt_tokens.toLocaleString() : "—"}</b></div><div><span>Output tokens</span><b>{metrics?.usage?.completion_tokens != null ? metrics.usage.completion_tokens.toLocaleString() : "—"}</b></div><div><span>Total tokens</span><b>{metrics?.usage?.total_tokens != null ? metrics.usage.total_tokens.toLocaleString() : "—"}</b></div></div>
+      <div className="run-metrics-grid"><div><span>Time to first token</span><b>{formatDuration(metrics?.ttftMs ?? null)}</b></div><div><span>Total duration</span><b>{metrics?.durationMs != null ? formatDuration(metrics.durationMs) : busy ? formatDuration(elapsed) : "—"}</b></div><div><span>Approx. output rate</span><b>{throughput != null ? `${throughput.toFixed(1)} tok/s` : "—"}</b></div><div><span>Input tokens</span><b>{metrics?.usage?.prompt_tokens != null ? metrics.usage.prompt_tokens.toLocaleString() : "—"}</b></div><div><span>Output tokens</span><b>{metrics?.usage?.completion_tokens != null ? metrics.usage.completion_tokens.toLocaleString() : "—"}</b></div><div><span>Total tokens</span><b>{metrics?.usage?.total_tokens != null ? metrics.usage.total_tokens.toLocaleString() : "—"}</b></div><div><span>Output characters</span><b>{answer ? Array.from(answer).length.toLocaleString() : busy ? "Streaming…" : "—"}</b></div></div>
       <p className="usage-note">Token counts are provider-reported; unavailable usage and rates are shown as —.</p>
       <div className="run-route"><span>Resolved model</span><b className="mono">{metrics?.resolvedModel || (busy ? model : "Awaiting request")}</b></div>
       <div className="run-route"><span>Provider / attempts</span><b>{metrics?.provider || "—"}{metrics?.attempts != null ? ` · ${metrics.attempts} upstream ${metrics.attempts === 1 ? "attempt" : "attempts"}` : ""}</b></div>

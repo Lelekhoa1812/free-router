@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./settings-page.css";
 
 export const metadata: Metadata = {
   title: "FreeRouter",

@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ getAdminSession: vi.fn(), getDb: vi.fn() }));
+const mocks = vi.hoisted(() => ({ getAdminSession: vi.fn(), getDb: vi.fn(), getRedis: vi.fn() }));
 vi.mock("@/lib/auth/admin", () => ({ getAdminSession: mocks.getAdminSession }));
 vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
+vi.mock("@/lib/redis", () => ({ getRedis: mocks.getRedis }));
 
 import { GET } from "./route";
 
@@ -10,6 +11,7 @@ describe("admin storage statistics", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getAdminSession.mockResolvedValue({ actor: "admin" });
+    mocks.getRedis.mockReturnValue({ ping: vi.fn().mockResolvedValue("PONG"), dbsize: vi.fn().mockResolvedValue(12) });
   });
 
   it("counts only existing database collections and keeps database-wide totals", async () => {
@@ -33,6 +35,9 @@ describe("admin storage statistics", () => {
     ]);
     expect(body.collectionStatsComplete).toBe(true);
     expect(body.dataBytes + body.indexBytes).toBe(1500);
+    expect(body.coordination.status).toBe("available");
+    expect(body.coordination.keyCount).toBe(12);
+    expect(body.coordination.pingMs).toEqual(expect.any(Number));
   });
 
   it("marks collection detail partial instead of inventing zero usage when a stats query fails", async () => {
@@ -56,5 +61,18 @@ describe("admin storage statistics", () => {
     const response = await GET();
     expect(response.status).toBe(401);
     expect(mocks.getDb).not.toHaveBeenCalled();
+  });
+
+  it("keeps MongoDB footprint available if the optional Redis sample fails", async () => {
+    const listCollections = vi.fn().mockReturnValue({ toArray: async () => [] });
+    const command = vi.fn(async () => ({ dataSize: 1000, indexSize: 200 }));
+    mocks.getDb.mockResolvedValue({ databaseName: "freerouter", listCollections, command });
+    mocks.getRedis.mockReturnValue({ ping: vi.fn().mockRejectedValue(new Error("Redis unavailable")), dbsize: vi.fn().mockResolvedValue(0) });
+
+    const response = await GET();
+    const body = await response.json();
+    expect(response.status).toBe(200);
+    expect(body.dataBytes).toBe(1000);
+    expect(body.coordination).toMatchObject({ status: "unavailable", keyCount: null, pingMs: null });
   });
 });

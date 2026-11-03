@@ -1,5 +1,6 @@
 import { getAdminSession } from "@/lib/auth/admin";
 import { getDb } from "@/lib/db";
+import { getRedis } from "@/lib/redis";
 
 export const runtime = "nodejs";
 
@@ -10,8 +11,22 @@ export async function GET() {
 
   try {
     const db = await getDb();
-    const stats = await db.command({ dbStats: 1 });
-    const existingCollections = await db.listCollections({}, { nameOnly: true }).toArray();
+    const [stats, existingCollections, redis] = await Promise.all([
+      db.command({ dbStats: 1 }),
+      db.listCollections({}, { nameOnly: true }).toArray(),
+      (async () => {
+        try {
+          const client = getRedis();
+          const [pingMs, keyCount] = await Promise.all([
+            (async () => { const startedAt = performance.now(); await client.ping(); return Math.round(performance.now() - startedAt); })(),
+            client.dbsize(),
+          ]);
+          return { status: "available" as const, keyCount: Number(keyCount), pingMs };
+        } catch {
+          return { status: "unavailable" as const, keyCount: null, pingMs: null };
+        }
+      })(),
+    ]);
     let collectionStatsComplete = true;
 
     const collectionResults = await Promise.all(existingCollections.map(async ({ name }) => {
@@ -35,6 +50,7 @@ export async function GET() {
       indexBytes: Number(stats.indexSize) || 0,
       collections: collectionResults.filter((item): item is NonNullable<typeof item> => item !== null),
       collectionStatsComplete,
+      coordination: { ...redis, sampledAt: new Date().toISOString() },
       observedAt: new Date().toISOString(),
     }, { headers: { "cache-control": "no-store" } });
   } catch {

@@ -1,0 +1,190 @@
+/* Layout and interaction polish scoped to the Settings page. */
+.settings-stack {
+  width: 100%;
+  max-width: 1080px;
+  gap: 14px;
+}
+
+.settings-stack .settings-card {
+  min-width: 0;
+  padding: 19px 21px;
+  border-color: #252e35;
+  background: linear-gradient(145deg, #12171b 0%, #101418 100%);
+}
+
+.settings-card-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 11px;
+}
+
+.settings-card-icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border: 1px solid #2e4439;
+  border-radius: 8px;
+  background: #14231d;
+  color: #9ed7b5;
+}
+
+.settings-card-icon.jev {
+  color: #b9a6ff;
+  border-color: #39334c;
+  background: #1c1926;
+}
+
+.settings-card-icon.config {
+  color: #a6c4e5;
+  border-color: #2d3d4b;
+  background: #151e26;
+}
+
+.settings-card-heading h2 {
+  margin: 0 0 3px;
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.settings-card-heading p {
+  margin: 0;
+  color: #7f8c93;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.settings-card .settings-description,
+.settings-card .settings-note {
+  max-width: 860px;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.settings-card .settings-aliases {
+  min-height: 42px;
+  margin: 12px 0;
+  padding: 4px 6px;
+  gap: 5px;
+}
+
+.settings-card .settings-aliases code {
+  padding: 6px 8px;
+  font-size: 10px;
+}
+
+.settings-card .settings-aliases .icon-button {
+  width: 29px;
+  height: 29px;
+  border: 1px solid transparent;
+}
+
+.settings-card .settings-aliases .icon-button:hover {
+  border-color: #344239;
+  background: #17221c;
+  color: #d8efe0;
+}
+
+.settings-card .jev-setting {
+  grid-template-columns: minmax(205px, 0.72fr) minmax(0, 1.28fr);
+  gap: 12px;
+  margin-top: 13px;
+  padding: 11px;
+}
+
+.settings-card .jev-controls {
+  gap: 9px;
+}
+
+.settings-card .jev-controls .settings-action {
+  width: auto;
+  min-width: 104px;
+  min-height: 32px;
+  padding: 6px 11px;
+  border-radius: 7px;
+  font-size: 10px;
+  line-height: 1.2;
+  font-weight: 650;
+  letter-spacing: 0;
+  white-space: nowrap;
+  box-shadow: none;
+}
+
+.settings-card .jev-controls .settings-action.primary {
+  color: #c9e6d4;
+  background: #1b3027;
+  border-color: #31513f;
+}
+
+.settings-card .jev-controls .settings-action.primary:hover:not(:disabled) {
+  background: #223a2e;
+  border-color: #477259;
+}
+
+.settings-card .jev-controls .settings-action.danger {
+  color: #f0a8ae;
+  background: #211719;
+  border-color: #493036;
+}
+
+.settings-card .jev-controls .settings-action.danger:hover:not(:disabled) {
+  background: #2a1a1e;
+  border-color: #75464d;
+}
+
+.settings-card .env-grid {
+  gap: 7px;
+  margin-top: 13px;
+}
+
+.settings-card .env-grid > div {
+  min-width: 0;
+  gap: 10px;
+  padding: 9px 10px;
+  background: #0e1215;
+}
+
+.settings-card .env-grid .mono {
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+}
+
+.settings-card .settings-auth-note {
+  margin-top: 8px;
+  color: #89969b;
+}
+
+.settings-card .jev-footnote {
+  margin: 10px 0 0;
+  color: #839097;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+@media (max-width: 850px) {
+  .settings-card .jev-setting {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+}
+
+@media (max-width: 700px) {
+  .settings-stack {
+    gap: 10px;
+  }
+
+  .settings-stack .settings-card {
+    padding: 15px;
+  }
+
+  .settings-card .settings-aliases {
+    width: 100%;
+    min-height: 40px;
+  }
+
+  .settings-card .env-grid > div {
+    align-items: flex-start;
+  }
+}

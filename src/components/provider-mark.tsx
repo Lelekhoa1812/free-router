@@ -1,17 +1,29 @@
-const PROVIDER_LOGOS: Record<string, string> = {
-  google: "/brand/providers/google-ai-studio.png",
-  nvidia: "/brand/providers/nvidia.svg",
-  openrouter: "/brand/providers/openrouter.svg",
-};
+const PROVIDER_LOGOS = {
+  google: { src: "/brand/providers/google-ai-studio.png", width: 96, height: 96 },
+  nvidia: { src: "/brand/providers/nvidia.svg", width: 164, height: 30 },
+  openrouter: { src: "/brand/providers/openrouter.svg", width: 1024, height: 730 },
+} as const;
+
+type ProviderId = keyof typeof PROVIDER_LOGOS;
+
+function isProviderId(provider: string): provider is ProviderId {
+  return Object.hasOwn(PROVIDER_LOGOS, provider);
+}
 
 export function ProviderMark({ provider }: { provider: string }) {
-  const logo = PROVIDER_LOGOS[provider];
+  const knownProvider = isProviderId(provider);
+  const logo = knownProvider ? PROVIDER_LOGOS[provider] : undefined;
 
-  if (!logo) return <span className={`provider-icon ${provider}`} aria-hidden="true">{provider.slice(0, 1).toUpperCase()}</span>;
+  // Provider names are rendered as adjacent text. Keep this visual mark decorative,
+  // and use intrinsic dimensions so the small local asset does not cause layout shift.
+  if (!logo) {
+    const fallback = provider.trim().slice(0, 1).toUpperCase() || "?";
+    return <span className="provider-icon unknown" aria-hidden="true">{fallback}</span>;
+  }
 
   return (
     <span className={`provider-icon ${provider}`} aria-hidden="true">
-      <img src={logo} alt="" />
+      <img src={logo.src} width={logo.width} height={logo.height} alt="" decoding="async" />
     </span>
   );
 }

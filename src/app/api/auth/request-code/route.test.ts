@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 const mocks = vi.hoisted(() => ({
+  adminLoginRequiresEmail: vi.fn(),
   allowCodeSend: vi.fn(), ensureInitialPassword: vi.fn(), listAdminUsers: vi.fn(), normalizeAdminEmail: vi.fn((email: string) => email.trim().toLowerCase()),
   seedBootstrapUser: vi.fn(), sendAccessPassword: vi.fn(), markPasswordSent: vi.fn(), validAdminEmail: vi.fn(() => true), sendPasswordToAll: vi.fn(),
 }));
@@ -14,6 +15,7 @@ function request(value: string) { return new NextRequest("https://freerouter.tes
 describe("POST /api/auth/request-code", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.adminLoginRequiresEmail.mockResolvedValue(true);
     mocks.allowCodeSend.mockResolvedValue(true);
     mocks.seedBootstrapUser.mockResolvedValue(false);
     mocks.listAdminUsers.mockResolvedValue([{ email }]);
@@ -46,6 +48,25 @@ describe("POST /api/auth/request-code", () => {
     const response = await POST(request(email));
     expect(response.status).toBe(200);
     expect(mocks.sendPasswordToAll).toHaveBeenCalledWith("000007");
+    expect(mocks.sendAccessPassword).not.toHaveBeenCalled();
+  });
+
+  it("disables email password delivery in shared-password-only mode", async () => {
+    mocks.adminLoginRequiresEmail.mockResolvedValue(false);
+    const response = await POST(request(email));
+    expect(response.status).toBe(410);
+    expect(await response.json()).toMatchObject({ error: { code: "email_password_delivery_disabled" } });
+    expect(mocks.allowCodeSend).not.toHaveBeenCalled();
+    expect(mocks.seedBootstrapUser).not.toHaveBeenCalled();
+    expect(mocks.sendAccessPassword).not.toHaveBeenCalled();
+    expect(mocks.sendPasswordToAll).not.toHaveBeenCalled();
+  });
+
+  it("fails closed if it cannot determine which sign-in mode is active", async () => {
+    mocks.adminLoginRequiresEmail.mockRejectedValue(new Error("database unavailable"));
+    const response = await POST(request(email));
+    expect(response.status).toBe(503);
+    expect(mocks.allowCodeSend).not.toHaveBeenCalled();
     expect(mocks.sendAccessPassword).not.toHaveBeenCalled();
   });
 
