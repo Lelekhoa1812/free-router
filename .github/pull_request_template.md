@@ -1,4 +1,8 @@
 <!--
+Title: <type>(<scope>): <summary>, at most 72 characters, no trailing period.
+Example: fix(decisions): accept unnamed questions
+See CONTRIBUTING.md. Labels are applied automatically; do not add type, area, size or ci labels by hand.
+
 Guidance lives in HTML comments and stays hidden in the rendered PR.
 Delete a section that does not apply; do not leave it blank.
 -->

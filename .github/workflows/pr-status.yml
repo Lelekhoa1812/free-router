@@ -1,0 +1,88 @@
+name: PR status
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+  pull_request_review:
+    types: [submitted, dismissed]
+
+permissions:
+  actions: read
+  pull-requests: write
+
+concurrency:
+  group: pr-status-${{ github.event.pull_request.number || github.event.workflow_run.id }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: CI result
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Move CI and review-status labels
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: |
+          set -euo pipefail
+          add() { gh pr edit "$NUMBER" --repo "$REPO" --add-label "$1" >/dev/null; }
+          remove() { gh pr edit "$NUMBER" --repo "$REPO" --remove-label "$1" >/dev/null 2>&1 || true; }
+
+          if [[ -z "$NUMBER" ]]; then
+            echo "No pull request is attached to this run; nothing to label."
+            exit 0
+          fi
+
+          remove "status: ci-running"
+          if [[ "$CONCLUSION" == "success" ]]; then
+            add "ci: passed"
+            remove "ci: failed"
+            if [[ "$(gh pr view "$NUMBER" --repo "$REPO" --json isDraft --jq .isDraft)" == "false" ]]; then
+              add "status: needs-review"
+            fi
+          else
+            add "ci: failed"
+            remove "ci: passed"
+            remove "status: needs-review"
+          fi
+
+  review:
+    name: Review state
+    if: github.event_name == 'pull_request_review'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Move review-status labels
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          STATE: ${{ github.event.review.state }}
+          DRAFT: ${{ github.event.pull_request.draft }}
+        run: |
+          set -euo pipefail
+          add() { gh pr edit "$NUMBER" --repo "$REPO" --add-label "$1" >/dev/null; }
+          remove() { gh pr edit "$NUMBER" --repo "$REPO" --remove-label "$1" >/dev/null 2>&1 || true; }
+
+          case "$STATE" in
+            approved)
+              remove "status: changes-requested"
+              remove "status: needs-review"
+              add "status: approved"
+              ;;
+            changes_requested)
+              remove "status: approved"
+              remove "status: needs-review"
+              add "status: changes-requested"
+              ;;
+            dismissed)
+              remove "status: approved"
+              remove "status: changes-requested"
+              if [[ "$DRAFT" == "false" ]] && gh pr view "$NUMBER" --repo "$REPO" --json labels --jq '.labels[].name' | grep -qx 'ci: passed'; then
+                add "status: needs-review"
+              fi
+              ;;
+          esac
