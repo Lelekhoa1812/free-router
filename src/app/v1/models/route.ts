@@ -21,7 +21,7 @@ export async function GET(request: Request) {
 
   try {
     const models = await availablePublicModels();
-    return Response.json({ object: "list", data: models.filter((model) => !auth.key.models?.length || auth.key.models.includes("*") || auth.key.models.includes(model.id)) }, { headers: noStore });
+    return Response.json({ object: "list", data: models.filter((model) => !auth.key.models || auth.key.models.includes("*") || auth.key.models.includes(model.id)) }, { headers: noStore });
   } catch {
     return Response.json({ error: { message: "Model availability is temporarily unavailable", type: "server_error", code: "model_registry_unavailable" } }, { status: 503, headers: noStore });
   }

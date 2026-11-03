@@ -17,6 +17,7 @@ export async function POST(request: Request) {
   try { const input = await readJson(request) as Record<string, unknown>; const name = String(input.name || "").trim(); const description = String(input.description || "").trim();
     if (name.length < 1 || name.length > 64 || description.length > 500) return Response.json({ error: "Invalid name or description" }, { status: 400 });
     if (input.scopes !== undefined && (!Array.isArray(input.scopes) || input.scopes.length < 1 || input.scopes.some(x => !["chat", "responses", "decisions"].includes(String(x))))) return Response.json({ error: "Scopes must include at least one supported API scope" }, { status: 400 });
+    if (input.models !== undefined && (!Array.isArray(input.models) || input.models.length < 1)) return Response.json({ error: "Models must contain at least one model or *" }, { status: 400 });
     const scopes = Array.isArray(input.scopes) ? input.scopes as string[] : ["chat", "responses", "decisions"];
     const expiresAt = input.expiresAt ? new Date(String(input.expiresAt)) : null;
     if (expiresAt && (!Number.isFinite(expiresAt.getTime()) || expiresAt <= new Date())) return Response.json({ error: "Expiry must be a valid future date" }, { status: 400 });

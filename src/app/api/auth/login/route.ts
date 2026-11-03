@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminSession, adminCookieName, adminCookieOptions } from "@/lib/auth/admin";
 import { adminLoginRequiresEmail, validAdminPassword, normalizeAdminEmail, validAdminEmail, loginEmailAllowed, failedEmailLogin, clearEmailLoginFailures } from "@/lib/auth/access";
 import { jsonError, readJson, sameOrigin } from "@/lib/http";
-import { loginAllowed, failedLogin, clearLoginFailures } from "@/lib/redis";
+import { beginLoginAttempt, clearLoginFailures } from "@/lib/redis";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,6 +16,12 @@ export async function GET() {
   }
 }
 
+function loginRateLimited() {
+  const response = jsonError(429, "Too many failed attempts. Try again in 15 minutes.", "login_rate_limited");
+  response.headers.set("retry-after", "900");
+  return response;
+}
+
 export async function POST(request: NextRequest) {
   if (!sameOrigin(request)) return jsonError(403, "Cross-origin request rejected", "cross_origin_request");
   let body: unknown;
@@ -25,14 +31,12 @@ export async function POST(request: NextRequest) {
   try {
     const emailRequired = await adminLoginRequiresEmail();
     const normalized = emailRequired && typeof email === "string" ? normalizeAdminEmail(email) : null;
-    if (!await loginAllowed(ip) || (emailRequired && normalized && !await loginEmailAllowed(normalized))) return jsonError(429, "Too many failed attempts. Try again in 15 minutes.", "login_rate_limited");
+    if (!await beginLoginAttempt(ip) || (emailRequired && normalized && !await loginEmailAllowed(normalized))) return loginRateLimited();
     if ((emailRequired && (!normalized || !validAdminEmail(normalized))) || typeof password !== "string" || !/^\d{6}$/.test(password)) {
-      await failedLogin(ip);
       if (emailRequired && normalized && validAdminEmail(normalized)) await failedEmailLogin(normalized);
       return jsonError(401, "Email or password is incorrect", "invalid_admin_password");
     }
     if (!await validAdminPassword(normalized, password)) {
-      await failedLogin(ip);
       if (emailRequired && normalized) await failedEmailLogin(normalized);
       return jsonError(401, "Email or password is incorrect", "invalid_admin_password");
     }

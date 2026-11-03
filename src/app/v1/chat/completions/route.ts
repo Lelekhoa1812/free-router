@@ -211,7 +211,8 @@ function streamChatResponse(args:{request:Request;rid:string;input:CanonicalChat
   return new Response(stream,{headers});
 }
 export async function POST(request: Request) {
-  const rid = request.headers.get("x-request-id") || `fr_${randomUUID()}`;
+  // Caller correlation headers must never become the accounting identity.
+  const rid = `fr_${randomUUID()}`;
   let input: CanonicalChat;
   try { input = translateChatRequest(await readJson(request)); } catch (e) {
     if (e instanceof RequestValidationError) return jsonError(400, e.message, e.kind === "unsupported_parameter" ? "unsupported_parameter" : "invalid_request", rid, e.param);

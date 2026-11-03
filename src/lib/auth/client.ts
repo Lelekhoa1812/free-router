@@ -14,7 +14,7 @@ export async function authenticateClient(request: Request, scope: string, model?
   const record = await db.collection<ClientKey & { tokenHash: string; expiresAt?: Date }>("client_keys").findOne({ tokenHash: hashClientKey(raw), status: "active" });
   if (!record || (record.expiresAt && record.expiresAt <= new Date())) return { error: "invalid_api_key" as const };
   if (!record.scopes.includes(scope)) return { error: "insufficient_scope" as const };
-  if (model && record.models?.length && !record.models.includes(model) && !record.models.includes("*")) return { error: "model_forbidden" as const };
+  if (model && record.models && !record.models.includes("*") && !record.models.includes(model)) return { error: "model_forbidden" as const };
   await db.collection("client_keys").updateOne({ _id: record._id }, { $set: { lastUsedAt: new Date() } });
   return { key: record };
 }
