@@ -13,6 +13,7 @@
     "test": "vitest run",
     "smoke:models": "node scripts/live-model-smoke.mjs",
     "smoke:deployment": "node scripts/deployed-smoke.mjs",
+    "smoke:matilda": "node scripts/matilda-probe.mjs",
     "test:watch": "vitest"
   },
   "dependencies": {

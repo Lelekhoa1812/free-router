@@ -4,7 +4,7 @@ Last reviewed: 3 November 2026. Provider catalogs, access, free quotas, and depl
 
 ## Service layout
 
-FreeRouter is a Node.js 24 Next.js application deployed to Vercel. `/v1` routes authenticate generated `sk-fr-` client keys and implement OpenAI-shaped model, Chat Completions, and Responses contracts. LLM calls use Google AI Studio, NVIDIA NIM, or OpenRouter credentials held only in server environment variables. TypeSafe Jev is available separately through its native System One endpoint and an OpenAI Decisions adapter. The optional Jev classifier runs only for `fr-auto` after an administrator enables it and acknowledges that a bounded request excerpt is sent to TypeSafe and uses existing account credits.
+FreeRouter is a Node.js 24 Next.js application deployed to Vercel. `/v1` routes authenticate generated `sk-fr-` client keys and implement OpenAI-shaped model, Chat Completions, and Responses contracts. LLM calls use Google AI Studio, NVIDIA NIM, OpenRouter, or Matilda (Maincode) credentials held only in server environment variables. TypeSafe Jev is available separately through its native System One endpoint and an OpenAI Decisions adapter. The optional Jev classifier runs only for `fr-auto` after an administrator enables it and acknowledges that a bounded request excerpt is sent to TypeSafe and uses existing account credits.
 
 MongoDB is the only durable database. It stores client-key hashes, provider health and binding observations, request metadata, configuration, and encrypted Responses state. Upstash Redis coordinates request admission, in-flight leases, login throttling, daily Jev request budgets, and short-lived classifier affinity. Redis or MongoDB failure should be treated as an operational outage, not as a reason to skip authentication or quota checks.
 
@@ -35,6 +35,8 @@ The UI is available at `http://localhost:3000`. Sign in, confirm MongoDB and Red
 ## Live model streaming smoke test
 
 `pnpm smoke:models` makes one bounded streamed generation request for each model currently designated ready in `scripts/live-model-smoke.mjs`. It loads local `.env`, skips providers with no configured key, chooses the first configured key per provider, sends a tiny prompt with a 128-token ceiling, and checks for visible answer text plus a finish marker. It prints model IDs, credential slot numbers, status, latency, byte counts, and event field names; it never prints credentials or generated answer text. Set `SMOKE_MODEL_TIMEOUT_MS` to change the 120-second per-model deadline, or `SMOKE_MODEL_FILTER` to run a subset by model ID.
+
+`pnpm smoke:matilda` separately checks Matilda `/models` discovery and one non-streaming chat completion. It requires `MATILDA_API_KEY_1` through `MATILDA_API_KEY_9` and never prints credentials or generated text. Matilda stays experimental until this probe passes and the catalog row moves to ready.
 
 A passing smoke test establishes only basic text generation over SSE. It does not certify tools, strict JSON Schema, vision, quota headroom, account independence, Cursor behavior, or long-context limits. Capability claims require the contract tests in [API_CONTRACTS.md](API_CONTRACTS.md) and release evidence described in [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
 

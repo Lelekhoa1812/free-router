@@ -1,4 +1,4 @@
-export type Provider = "google" | "nvidia" | "openrouter";
+export type Provider = "google" | "nvidia" | "openrouter" | "matilda";
 export type CapabilityState = "passed" | "failed" | "unknown" | "unsupported";
 export interface ModelProfile {
   id: string; provider: Provider; upstream: string; label: string; context: number | null; maxOutput: number | null;
@@ -43,6 +43,7 @@ const rows: Array<[Provider,string,string,number|null,number|null,CapabilityStat
   ["openrouter","google/gemma-4-31b-it:free","Gemma 4 31B IT",262144,32768,"passed","unknown","unsupported","unknown","standard","experimental","Tool probe was rate limited; JSON Schema route unavailable."],
   ["openrouter","liquid/lfm-2.5-2.6b:free","Liquid LFM 2.5 2.6B",65536,8192,"unknown","unknown","unknown","unknown","unknown","unavailable","Excluded: below the modern coding/general quality threshold."],
   ["openrouter","nvidia/nemotron-3.5-content-safety:free","Nemotron 3.5 Content Safety",128000,8192,"unknown","unknown","unknown","unknown","unknown","unavailable","Excluded: specialized content-safety model."],
+  ["matilda","matilda","Matilda (Maincode)",null,null,"passed","unsupported","passed","unsupported","unknown","experimental","OpenAI-compatible path implemented with a non-streaming upstream bridge and request limits; Matilda model discovery and a FreeRouter streamed smoke remain pending."],
 ];
 
 export const MODEL_CATALOG: ModelProfile[] = rows.map(([provider, upstream, label, context, maxOutput, text, tools, schema, vision, latency, status, reason]) => ({

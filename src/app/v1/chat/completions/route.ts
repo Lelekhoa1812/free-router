@@ -3,7 +3,7 @@ import { getDb } from "@/lib/db";
 import { authenticateClient, consumeInternalClient } from "@/lib/auth/client";
 import { ALIASES, MODEL_BY_ID, type ModelProfile } from "@/lib/models/catalog";
 import { getProviderCredentials } from "@/lib/env";
-import { translateChatRequest, upstreamChat, type CanonicalChat } from "@/lib/providers/openai";
+import { buildProviderChatBody, ProviderRequestError, translateChatRequest, upstreamChat, type CanonicalChat } from "@/lib/providers/openai";
 import { checkAdmission, releaseAdmission } from "@/lib/redis";
 import { getRedis, useDailyBudgets } from "@/lib/redis";
 import { callSystemOne } from "@/lib/jev";
@@ -31,6 +31,13 @@ async function classifyAuto(body:CanonicalChat,keyId:string,allowed:boolean) {
 }
 function supportsReasoningEffort(profile:ModelProfile){return ["nvidia/z-ai/glm-5.3-flash","nvidia/deepseek-ai/deepseek-v4.1-flash","google/gemini-3.6-flash"].includes(profile.id);}
 function supportsRequest(profile: ModelProfile, body: CanonicalChat) {
+  // Matilda rejects sampling controls and native tool fields. Fail explicitly
+  // rather than silently changing a caller's semantics.
+  if (profile.provider === "matilda") {
+    if (body.temperature !== undefined || body.top_p !== undefined || body.stop !== undefined || body.reasoning_effort !== undefined) return false;
+    if (body.tool_choice !== undefined || body.parallel_tool_calls !== undefined) return false;
+    if ((body.response_format as any)?.type === "json_object") return false;
+  }
   if (body.tools && body.tools.length && profile.tools !== "passed") return false;
   if (body.tools?.some((t:any)=>t?.function?.strict===true) && profile.schema !== "passed") return false;
   if (body.response_format && (body.response_format as any).type === "json_schema" && profile.schema !== "passed") return false;
@@ -224,6 +231,10 @@ export async function POST(request: Request) {
   if ("error" in auth) return jsonError(auth.error === "invalid_api_key" ? 401 : 403, auth.error === "invalid_api_key" ? "Invalid API key" : "API key cannot access this request", String(auth.error), rid);
   const alias = input.model.startsWith("fr-"); const category=input.model==="fr-auto"?await classifyAuto(input,String(auth.key._id),auth.key.allowJevRouting!==false):"code"; const declared = resolveCandidates(input.model,category); const candidates = declared.filter(p => supportsRequest(p,input));
   if (!candidates.length) return declared.length ? jsonError(400, "The selected model does not support one or more requested capabilities", "unsupported_capability", rid) : jsonError(404, "Unknown or unavailable model", "model_not_found", rid);
+  for (const profile of candidates) {
+    try { buildProviderChatBody(profile, input); }
+    catch (error) { if (error instanceof ProviderRequestError) return jsonError(error.status, error.message, error.code, rid); }
+  }
   const failures: UpstreamVerdict[] = [];let dispatched=0;
   const db = await getDb();
   if(input.stream===true)return streamChatResponse({request,rid,input,keyId:String(auth.key._id),candidates,alias,db});
