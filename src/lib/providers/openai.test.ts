@@ -1,6 +1,6 @@
 import { describe,expect,it } from "vitest";
 import { translateChatRequest, buildProviderChatBody, completionToSse } from "@/lib/providers/openai";
-import { MODEL_BY_ID } from "@/lib/models/catalog";
+import { MODEL_BY_ID, publicModels } from "@/lib/models/catalog";
 describe("Chat Completions request validation",()=>{
   it("accepts a minimal OpenAI chat request without changing message order",()=>{const input={model:"fr-code",messages:[{role:"system",content:"You are helpful."},{role:"user",content:"Hello"}],stream:true};expect(translateChatRequest(input)).toMatchObject(input)});
   it("rejects unknown fields instead of silently dropping them",()=>{expect(()=>translateChatRequest({model:"fr-auto",messages:[{role:"user",content:"x"}],logit_bias:{}})).toThrow(/Unsupported request field/)});
@@ -11,11 +11,14 @@ describe("Chat Completions request validation",()=>{
 
 describe("Matilda (Maincode) provider compatibility",()=>{
   const matilda=MODEL_BY_ID.get("matilda/matilda")!;
-  it("is registered as experimental and does not claim tools or vision",()=>{
+  it("is registered as ready and does not claim tools or vision",()=>{
     expect(matilda).toBeDefined();
-    expect(matilda.status).toBe("experimental");
+    expect(matilda.status).toBe("ready");
     expect(matilda.tools).toBe("unsupported");
     expect(matilda.vision).toBe("unsupported");
+  });
+  it("is published once its gateway path is certified",()=>{
+    expect(publicModels().map((model) => model.id)).toContain("matilda/matilda");
   });
   it("sends only the fields Maincode accepts and keeps upstream streaming enabled",()=>{
     const body=buildProviderChatBody(matilda,{model:matilda.id,messages:[{role:"user",content:"hi"}],temperature:0.2,top_p:0.9,stop:["x"],tools:[{type:"function",function:{name:"f",parameters:{}}}],tool_choice:"auto",parallel_tool_calls:true,reasoning_effort:"high",stream_options:{include_usage:true},user:"u",max_completion_tokens:64,response_format:{type:"json_schema",json_schema:{name:"x",schema:{type:"object"}}}});

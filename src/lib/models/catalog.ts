@@ -43,7 +43,7 @@ const rows: Array<[Provider,string,string,number|null,number|null,CapabilityStat
   ["openrouter","google/gemma-4-31b-it:free","Gemma 4 31B IT",262144,32768,"passed","unknown","unsupported","unknown","standard","experimental","Tool probe was rate limited; JSON Schema route unavailable."],
   ["openrouter","liquid/lfm-2.5-2.6b:free","Liquid LFM 2.5 2.6B",65536,8192,"unknown","unknown","unknown","unknown","unknown","unavailable","Excluded: below the modern coding/general quality threshold."],
   ["openrouter","nvidia/nemotron-3.5-content-safety:free","Nemotron 3.5 Content Safety",128000,8192,"unknown","unknown","unknown","unknown","unknown","unavailable","Excluded: specialized content-safety model."],
-  ["matilda","matilda","Matilda (Maincode)",null,null,"passed","unsupported","passed","unsupported","unknown","experimental","Native OpenAI-compatible SSE with a JSON fallback and request limits; direct `/models`, chat, stream and strict-schema probes pass. FreeRouter gateway certification remains pending."],
+  ["matilda","matilda","Matilda (Maincode)",null,null,"passed","unsupported","passed","unsupported","unknown","ready","Gateway-certified locally on 3 November 2026: `/v1/models`, JSON chat, streamed SSE and strict schema all returned 200. Deployed production smoke remains."],
 ];
 
 export const MODEL_CATALOG: ModelProfile[] = rows.map(([provider, upstream, label, context, maxOutput, text, tools, schema, vision, latency, status, reason]) => ({
