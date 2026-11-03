@@ -25,8 +25,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   if (!sameOrigin(request)) return jsonError(403, "Cross-origin request rejected", "cross_origin_request");
   if (!await getAdminSession()) return jsonError(401, "Unauthorized", "unauthorized");
-  const actorEmail = await getAdminSessionEmail();
-  if (!actorEmail) return jsonError(401, "Unauthorized", "unauthorized");
+  const actorEmail = await getAdminSessionEmail() ?? "shared-password";
   let email: string;
   try { email = await bodyEmail(request); } catch { return jsonError(400, "Enter a valid email address", "invalid_email"); }
   try {
@@ -51,8 +50,7 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   if (!sameOrigin(request)) return jsonError(403, "Cross-origin request rejected", "cross_origin_request");
   if (!await getAdminSession()) return jsonError(401, "Unauthorized", "unauthorized");
-  const actorEmail = await getAdminSessionEmail();
-  if (!actorEmail) return jsonError(401, "Unauthorized", "unauthorized");
+  const actorEmail = await getAdminSessionEmail() ?? "shared-password";
   let email: string;
   try { email = await bodyEmail(request); } catch { return jsonError(400, "Enter a valid email address", "invalid_email"); }
   try {

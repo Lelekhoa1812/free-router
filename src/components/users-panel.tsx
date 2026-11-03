@@ -59,14 +59,14 @@ export function UsersPanel() {
       const response = await fetch("/api/admin/users", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: normalized }) });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || "Could not add this email.");
-      setEmail(""); setNotice(data.delivery === "failed" ? `${normalized} was added, but the password email could not be delivered. Use Refresh password to retry delivery.` : `${normalized} was added and can receive password updates.`);
+      setEmail(""); setNotice(data.delivery === "failed" ? `${normalized} was added, but the password email could not be delivered. Use Refresh password to retry delivery.` : `${normalized} was added as a password email recipient.`);
       await load();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not add this email."); }
     finally { setSaving(false); }
   }
 
   async function removeUser(user: UserRecord) {
-    if (!window.confirm(`Remove ${user.email} from the authorized recipient list? They will not receive future passwords.`)) return;
+    if (!window.confirm(`Remove ${user.email} from the password email list? They will not receive future password emails.`)) return;
     setSaving(true); setError(""); setNotice("");
     try {
       const response = await fetch("/api/admin/users", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: user.email }) });
@@ -79,7 +79,7 @@ export function UsersPanel() {
   }
 
   async function rotatePassword() {
-    if (rotating || !window.confirm(`Generate a new six-digit password and email it to all ${users.length} authorized recipient${users.length === 1 ? "" : "s"}? The current password will stop working immediately.`)) return;
+    if (rotating || !window.confirm(`Generate a new six-digit password and email it to all ${users.length} password recipient${users.length === 1 ? "" : "s"}? The current password will stop working immediately.`)) return;
     setRotating(true); setError(""); setNotice("");
     try {
       const response = await fetch("/api/admin/users/rotate", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
@@ -90,7 +90,7 @@ export function UsersPanel() {
       setLastSentAt(data.lastSentAt ?? new Date().toISOString());
       const sent = typeof data.sent === "number" ? data.sent : users.length;
       const failed = Array.isArray(data.failed) ? data.failed.length : 0;
-      setNotice(failed ? `Password changed. Sent to ${sent}; ${failed} email${failed === 1 ? "" : "s"} failed.` : `Password changed and sent to ${sent} authorized recipient${sent === 1 ? "" : "s"}.`);
+      setNotice(failed ? `Password changed. Sent to ${sent}; ${failed} email${failed === 1 ? "" : "s"} failed.` : `Password changed and sent to ${sent} password recipient${sent === 1 ? "" : "s"}.`);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not rotate the password."); }
     finally { setRotating(false); }
   }
@@ -115,7 +115,7 @@ export function UsersPanel() {
     </section>
 
     <section className="panel section-card users-list-card" aria-labelledby="authorized-users-heading">
-      <div className="section-title users-list-heading"><div><div className="users-title-line"><UsersRound size={16}/><h2 id="authorized-users-heading">Authorized email recipients</h2><span className="users-count">{users.length}</span></div><p>Add or remove addresses that receive password rotation emails.</p></div></div>
+      <div className="section-title users-list-heading"><div><div className="users-title-line"><UsersRound size={16}/><h2 id="authorized-users-heading">Password email recipients</h2><span className="users-count">{users.length}</span></div><p>Manage which addresses receive the shared password. With two or more recipients, sign-in needs only the password.</p></div></div>
       <form className="users-add-form" onSubmit={(event) => void addUser(event)}>
         <label className="users-email-label" htmlFor="authorized-email">Email address</label>
         <div className="users-add-controls"><input id="authorized-email" className="field" type="email" autoComplete="email" maxLength={254} placeholder="name@example.com" value={email} onChange={(event) => setEmail(event.target.value)} required/><button className="button primary users-add-button" type="submit" disabled={saving || loading || !email.trim()}>{saving ? <span className="button-spinner"/> : <Plus size={14}/>}Add email</button></div>

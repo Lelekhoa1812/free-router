@@ -14,7 +14,7 @@ vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
 vi.mock("@/lib/crypto", () => ({ verifySignature: () => true, signValue: () => "sig" }));
 
 import { getAdminSession } from "./admin";
-function session(epoch: number, email = "Admin@Example.com", exp = Date.now() + 60_000) { return `${Buffer.from(JSON.stringify({ epoch, email, exp })).toString("base64url")}.sig`; }
+function session(epoch: number, email: string | null = "Admin@Example.com", exp = Date.now() + 60_000) { return `${Buffer.from(JSON.stringify({ epoch, email, exp })).toString("base64url")}.sig`; }
 
 describe("admin sessions", () => {
   beforeEach(() => {
@@ -28,6 +28,13 @@ describe("admin sessions", () => {
   it("accepts a valid current session for a still-authorized email", async () => {
     expect(await getAdminSession()).toBe(true);
     expect(mocks.findUser).toHaveBeenCalledWith({ email: "admin@example.com" }, { projection: { _id: 1 } });
+  });
+
+  it("accepts a shared-password session without tying it to a recipient email", async () => {
+    mocks.token = session(4, null);
+    mocks.userExists = false;
+    expect(await getAdminSession()).toBe(true);
+    expect(mocks.findUser).not.toHaveBeenCalled();
   });
 
   it("invalidates every prior session when the shared password rotates", async () => {

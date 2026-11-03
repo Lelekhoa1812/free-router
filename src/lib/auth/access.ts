@@ -36,7 +36,7 @@ function getTransport() {
 
 export async function sendAccessPassword(email: string, code: string) {
   const mail = getTransport();
-  await mail.sendMail({ from: `FreeRouter <${env.smtpUser}>`, to: email, subject: "Your FreeRouter access password", text: `Your current FreeRouter access password is: ${code}\n\nEnter your email address and this password at the FreeRouter sign-in page. It remains valid until an administrator rotates it.`, html: `<p>Your current FreeRouter access password is:</p><p style="font-size:24px;font-weight:700;letter-spacing:4px">${code}</p><p>Enter your email address and this password at the FreeRouter sign-in page. It remains valid until an administrator rotates it.</p>` });
+  await mail.sendMail({ from: `FreeRouter <${env.smtpUser}>`, to: email, subject: "Your FreeRouter access password", text: `Your current FreeRouter access password is: ${code}\n\nEnter this password at the FreeRouter sign-in page. If the page asks for an email address, use the address that received this message. It remains valid until an administrator rotates it.`, html: `<p>Your current FreeRouter access password is:</p><p style="font-size:24px;font-weight:700;letter-spacing:4px">${code}</p><p>Enter this password at the FreeRouter sign-in page. If the page asks for an email address, use the address that received this message. It remains valid until an administrator rotates it.</p>` });
 }
 
 /** Create the initial allowlisted user only from a request for the configured sender mailbox. */
@@ -89,14 +89,23 @@ export async function currentAccessPassword() {
 export async function markPasswordSent(at = new Date()) { const db = await getDb(); await db.collection<AuthRecord>("admin_auth").updateOne({ _id: AUTH_ID }, { $set: { lastSentAt: at } }); }
 export async function currentAuthEpoch() { return (await currentAccessPassword()).epoch; }
 
-export async function validAdminPassword(email: string, input: string) {
+export async function validAdminPassword(email: string | null, input: string) {
   if (!/^\d{6}$/.test(input)) return false;
   const db = await getDb();
-  const user = await db.collection<AdminUser>("admin_users").findOne({ email: normalizeAdminEmail(email) });
-  if (!user) return false;
+  const users = db.collection<AdminUser>("admin_users");
+  const count = await users.countDocuments({}, { limit: 2 });
+  if (count < 2) {
+    if (typeof email !== "string" || !await users.findOne({ email: normalizeAdminEmail(email) }, { projection: { _id: 1 } })) return false;
+  } else if (email !== null) return false;
   const auth = await db.collection<AuthRecord>("admin_auth").findOne({ _id: AUTH_ID });
   const expected = auth ? readPassword(auth) : null;
   return Boolean(expected && safeCompare(input, expected));
+}
+
+/** Email is required only while there is a single registered access recipient. */
+export async function adminLoginRequiresEmail() {
+  const db = await getDb();
+  return await db.collection<AdminUser>("admin_users").countDocuments({}, { limit: 2 }) < 2;
 }
 
 /** Limit code sends by both caller IP and recipient without disclosing allowlist membership. */

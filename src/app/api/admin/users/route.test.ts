@@ -63,6 +63,14 @@ describe("/api/admin/users", () => {
     expect(auditBody.toLowerCase()).not.toContain("smtp");
   });
 
+  it("allows a shared-password session to add recipients without an email identity", async () => {
+    mocks.getAdminSessionEmail.mockResolvedValue(null);
+    const response = await POST(request("new@example.com"));
+    expect(response.status).toBe(201);
+    expect(mocks.addAdminUser).toHaveBeenCalledWith("new@example.com");
+    expect(mocks.recordAdminAuthAudit).toHaveBeenCalledWith({ action: "admin-user-added", actorEmail: "shared-password", targetEmail: "new@example.com", targetCount: 1, outcome: "sent" });
+  });
+
   it("audits deletion with the actor and target address but no access password", async () => {
     mocks.removeAdminUser.mockResolvedValue(true);
     const response = await (await import("./route")).DELETE(new NextRequest("https://freerouter.test/api/admin/users", { method: "DELETE", headers: { origin: "https://freerouter.test", "content-type": "application/json" }, body: JSON.stringify({ email: "remove@example.com" }) }));

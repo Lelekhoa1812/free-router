@@ -49,4 +49,12 @@ describe("POST /api/admin/users/rotate", () => {
     expect(auditBody).not.toContain("001234");
     expect(auditBody.toLowerCase()).not.toContain("smtp");
   });
+
+  it("lets a shared-password session rotate the code and refresh its generic session", async () => {
+    mocks.getAdminSessionEmail.mockResolvedValue(null);
+    const response = await POST(request());
+    expect(response.status).toBe(200);
+    expect(mocks.recordAdminAuthAudit).toHaveBeenCalledWith({ action: "admin-password-rotated", actorEmail: "shared-password", targetCount: 2, sentCount: 0, failedCount: 2, outcome: "delivery_failed" });
+    expect(mocks.createAdminSession).toHaveBeenCalledWith(null, 8);
+  });
 });

@@ -3,21 +3,22 @@ import { NextRequest } from "next/server";
 
 const mocks = vi.hoisted(() => ({
   createAdminSession: vi.fn(), adminCookieName: "fr_admin", adminCookieOptions: vi.fn(() => ({ httpOnly: true, secure: false, sameSite: "strict", path: "/", maxAge: 43200 })),
-  validAdminPassword: vi.fn(), normalizeAdminEmail: vi.fn((email: string) => email.trim().toLowerCase()), validAdminEmail: vi.fn(() => true),
+  adminLoginRequiresEmail: vi.fn(), validAdminPassword: vi.fn(), normalizeAdminEmail: vi.fn((email: string) => email.trim().toLowerCase()), validAdminEmail: vi.fn(() => true),
   loginEmailAllowed: vi.fn(), failedEmailLogin: vi.fn(), clearEmailLoginFailures: vi.fn(),
   loginAllowed: vi.fn(), failedLogin: vi.fn(), clearLoginFailures: vi.fn(),
 }));
 vi.mock("@/lib/auth/admin", () => ({ createAdminSession: mocks.createAdminSession, adminCookieName: mocks.adminCookieName, adminCookieOptions: mocks.adminCookieOptions }));
-vi.mock("@/lib/auth/access", () => ({ validAdminPassword: mocks.validAdminPassword, normalizeAdminEmail: mocks.normalizeAdminEmail, validAdminEmail: mocks.validAdminEmail, loginEmailAllowed: mocks.loginEmailAllowed, failedEmailLogin: mocks.failedEmailLogin, clearEmailLoginFailures: mocks.clearEmailLoginFailures }));
+vi.mock("@/lib/auth/access", () => ({ adminLoginRequiresEmail: mocks.adminLoginRequiresEmail, validAdminPassword: mocks.validAdminPassword, normalizeAdminEmail: mocks.normalizeAdminEmail, validAdminEmail: mocks.validAdminEmail, loginEmailAllowed: mocks.loginEmailAllowed, failedEmailLogin: mocks.failedEmailLogin, clearEmailLoginFailures: mocks.clearEmailLoginFailures }));
 vi.mock("@/lib/redis", () => ({ loginAllowed: mocks.loginAllowed, failedLogin: mocks.failedLogin, clearLoginFailures: mocks.clearLoginFailures }));
 
 import { POST } from "./route";
-function request(email: string, password: string) { return new NextRequest("https://freerouter.test/api/auth/login", { method: "POST", headers: { origin: "https://freerouter.test", "content-type": "application/json", "x-real-ip": "192.0.2.9" }, body: JSON.stringify({ email, password }) }); }
+function request(email: string | undefined, password: string) { return new NextRequest("https://freerouter.test/api/auth/login", { method: "POST", headers: { origin: "https://freerouter.test", "content-type": "application/json", "x-real-ip": "192.0.2.9" }, body: JSON.stringify({ ...(email === undefined ? {} : { email }), password }) }); }
 
 describe("POST /api/auth/login", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.createAdminSession.mockResolvedValue("signed-session");
+    mocks.adminLoginRequiresEmail.mockResolvedValue(true);
     mocks.loginAllowed.mockResolvedValue(true);
     mocks.loginEmailAllowed.mockResolvedValue(true);
     mocks.validAdminPassword.mockResolvedValue(true);
@@ -59,5 +60,33 @@ describe("POST /api/auth/login", () => {
     expect(response.status).toBe(401);
     expect(mocks.failedLogin).toHaveBeenCalledWith("192.0.2.9");
     expect(mocks.validAdminPassword).not.toHaveBeenCalled();
+  });
+
+  it("switches to a shared-password-only login when two recipients are registered", async () => {
+    mocks.adminLoginRequiresEmail.mockResolvedValue(false);
+    const response = await POST(request(undefined, "012345"));
+    expect(response.status).toBe(200);
+    expect(mocks.validAdminPassword).toHaveBeenCalledWith(null, "012345");
+    expect(mocks.createAdminSession).toHaveBeenCalledWith(null);
+    expect(mocks.loginEmailAllowed).not.toHaveBeenCalled();
+    expect(mocks.clearEmailLoginFailures).not.toHaveBeenCalled();
+  });
+
+  it("ignores supplied email when shared-password-only mode is active", async () => {
+    mocks.adminLoginRequiresEmail.mockResolvedValue(false);
+    const response = await POST(request("not-an-email", "012345"));
+    expect(response.status).toBe(200);
+    expect(mocks.validAdminPassword).toHaveBeenCalledWith(null, "012345");
+  });
+});
+
+describe("GET /api/auth/login", () => {
+  it("returns only whether the password form needs an email field", async () => {
+    mocks.adminLoginRequiresEmail.mockResolvedValue(false);
+    const { GET } = await import("./route");
+    const response = await GET();
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ emailRequired: false });
+    expect(response.headers.get("cache-control")).toBe("no-store");
   });
 });

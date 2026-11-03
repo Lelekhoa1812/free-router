@@ -1,6 +1,6 @@
 # FreeRouter
 
-FreeRouter is a self-hosted, OpenAI-shaped gateway for configured free-tier Google AI Studio, NVIDIA NIM, and OpenRouter models. It also exposes TypeSafe Jev as a separate Decisions API. The dashboard uses an email allowlist and a rotating six-digit shared password delivered over SMTP; generated `sk-fr-` keys authorize `/v1` API calls.
+FreeRouter is a self-hosted, OpenAI-shaped gateway for configured free-tier Google AI Studio, NVIDIA NIM, and OpenRouter models. It also exposes TypeSafe Jev as a separate Decisions API. The dashboard uses a rotating six-digit shared password delivered over SMTP; registered email addresses receive password mail, and the first address is required at login only until a second recipient is added. Generated `sk-fr-` keys authorize `/v1` API calls.
 
 ## Current implementation
 
@@ -17,11 +17,11 @@ pnpm install
 pnpm dev
 ```
 
-Open `http://localhost:3000`. The first authorized address is bootstrapped from `SMTP_USER`: request a sign-in email, then enter that address and its six-digit code. Add or remove recipients and rotate the shared code under **Users**. Create a client key under **API keys**, then use `http://localhost:3000/v1` as the OpenAI-compatible base URL. A local Vercel production build is checked with `pnpm build`.
+Open `http://localhost:3000`. The first password recipient is bootstrapped from `SMTP_USER`: request a sign-in email, then enter that address and its six-digit code. While fewer than two recipient emails exist, login requires the registered email plus the shared code. At two or more recipients, the email field disappears and the shared six-digit code alone signs administrators in; recipients are then delivery contacts, not login identities. Existing sessions are retained until their normal expiry or password rotation. Add/remove recipients and rotate the shared code under **Users**. Create a client key under **API keys**, then use `http://localhost:3000/v1` as the OpenAI-compatible base URL. A local Vercel production build is checked with `pnpm build`.
 
 The environment variable names and slots are listed in `.env.example`. Set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, and `SMTP_PASSWORD` for password delivery; Gmail app passwords may be entered with spaces and are normalized by the mailer. `IMAP_HOST` and `IMAP_PORT` are optional and unused because this app sends mail only. Provider credentials stay server-side. Blank key slots are skipped. Keep the encryption, session, client-key hash, and cron secrets independent; rotate state encryption with a planned key version migration once existing stored responses need preservation.
 
-The six-digit dashboard password is random, encrypted in MongoDB, shared by all authorized addresses, and valid until the next rotation. The **Users** page displays it for copying. Adding an address sends the current code to that address; removing one blocks future sign-ins and deliveries. Rotating immediately invalidates existing sessions (the administrator who initiated the rotation receives a refreshed session) and emails the new code to every authorized address. The SMTP sender mailbox is the initial bootstrap user when the allowlist is empty. Sign-in email requests and failed attempts are throttled; email requests respond generically to avoid exposing allowlist membership.
+The six-digit dashboard password is random, encrypted in MongoDB, shared among the operators, and valid until the next rotation. The **Users** page displays it for copying. Adding an address sends the current code to that address; removing one stops future deliveries. With fewer than two recipient emails, login checks the entered email against the recipient list. When a second recipient is added, login changes to password-only; anyone who knows the shared password can manage the recipient list, matching the requested shared-admin model. Rotating immediately invalidates existing sessions (the administrator who initiated the rotation receives a refreshed session) and emails the new code to every current recipient. The SMTP sender mailbox is the initial bootstrap recipient when the list is empty. Sign-in email requests and failed attempts are throttled; email requests respond generically to avoid exposing list membership.
 
 ## OpenAI-compatible setup
 

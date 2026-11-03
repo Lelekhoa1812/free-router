@@ -7,7 +7,7 @@ This map keeps the implementation reviewable against the FreeRouter product plan
 | Next.js application, TypeScript, Vercel Node routes | Implemented | `src/app`, `vercel.json`, build check |
 | MongoDB only durable store | Implemented foundation | Mongo client pool and indexes exist; storage budget accounting and recovery remain |
 | Upstash atomic minute admission and expiring concurrency leases | Partial | Lua admission covers global/client/provider/model scopes; provider-specific daily/token limits, Redis epoch recovery, durable reservation journal remain |
-| Email-based dashboard access, Users page, signed cookie, failed-login throttle | Implemented and covered by mocked route/session tests | Shared six-digit code encrypted in MongoDB; sender mailbox bootstrap; SMTP delivery is pending live deployment verification |
+| Email-based dashboard access, Users page, signed cookie, failed-login throttle | Implemented and covered by mocked route/session tests | Shared six-digit code encrypted in MongoDB; sender mailbox bootstrap; deployed SMTP delivery confirmed by a production request-code timestamp and email login |
 | Generated client keys, scope/model enforcement, revocation | Implemented foundation | `/api/admin/keys`; full limits/expiry/audit/cascade integration tests remain |
 | Google, NVIDIA, OpenRouter seed inventory | Implemented snapshot | `src/lib/models/catalog.ts`; daily discovery and full model/capability certification remain |
 | Chat Completions streaming/nonstreaming | Implemented foundation | `/v1/chat/completions`; provider-specific tests, schema validation, retry/quota classification, and SDK end-to-end suite remain |
@@ -23,7 +23,7 @@ This map keeps the implementation reviewable against the FreeRouter product plan
 | Python SDK compatibility | Not implemented | Add pinned Python SDK runner and test matrix |
 | Real quota/concurrency/fault suite | Not implemented | Isolated Redis/Mongo integration gates from product plan remain |
 | Live capability certification | Initial probe snapshot only | Re-run bounded current probes; no capability should be considered newly certified from this table |
-| Vercel deployment | Deployed and smoke-tested | Production alias `https://free-router-olive.vercel.app`, deployment from commit `3225f10`; health/readiness, OpenAI SDK contracts, and real provider calls passed except two transient Google 503s documented in `OPERATIONS.md` |
+| Vercel deployment | Deployed; limited current release smoke | Production alias `https://free-router-olive.vercel.app`, deployment from commit `6c14686`; live/readiness and email login passed, 21 models listed, `fr-auto` stream succeeded, but the omnibus SDK smoke stalled after a pinned `fr-code` upstream-unavailable response and was stopped with its temporary key cleaned up. Full SDK/Cursor certification remains open |
 | Cursor acceptance | Not run | Still requires an end-to-end deployed Cursor workflow, including a real agent/tool loop and key revocation check |
 
 ## Immediate release blockers
