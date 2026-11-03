@@ -79,6 +79,10 @@ A group is a quota boundary, not a UI label. Put keys that share a real provider
 
 The ledger is intentionally conservative when a process dies before settlement: the estimated tokens remain charged rather than undercounting usage.
 
+## Verification
+
+`pnpm test:quota:redis` starts a local `redis-server` and a small Upstash-compatible HTTP fixture, then runs the real reserve/settle Lua against concurrent requests. It covers request-window and token-window contention, idempotent duplicate settlement, and failed-attempt release. The command requires `redis-server` and `redis-cli` on `PATH`; it is intentionally outside `pnpm test` and CI so the normal suite needs no local Redis process. It uses a temporary database and never points at the hosted Upstash instance.
+
 ## Admin visibility
 
 The dashboard **Quota** page reads `GET /api/admin/quota`. It requires an admin session and returns `Cache-Control: no-store`. It shows the current mode, per-provider groups, assigned slots, configured limits, live request/token counters, remaining headroom, reset time, and configuration warnings.
