@@ -16,6 +16,8 @@ export const env = {
     { id: "google", label: "Google AI Studio", envPrefix: "GEMINI_API_KEY_", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", count: 9 },
     { id: "nvidia", label: "NVIDIA NIM", envPrefix: "NVIDIA_NIM_API_KEY_", baseUrl: "https://integrate.api.nvidia.com/v1", count: 9 },
     { id: "matilda", label: "Matilda (Maincode)", envPrefix: "MATILDA_API_KEY_", baseUrl: "https://matilda.maincode.com/api/v1", count: 9 },
+    { id: "zenmux", label: "ZenMux", envPrefix: "ZENMUX_API_KEY_", baseUrl: "https://zenmux.ai/api/v1", count: 9 },
+    { id: "orcarouter", label: "OrcaRouter", envPrefix: "ORCAROUTER_API_KEY_", baseUrl: "https://api.orcarouter.ai/v1", count: 9 },
   ] as const,
   jevKey: process.env.JEV_TYPESAFE_API_KEY,
   smtpHost: process.env.SMTP_HOST,

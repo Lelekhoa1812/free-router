@@ -2,7 +2,7 @@
 
 Last reviewed: 3 November 2026.
 
-FreeRouter keeps a local quota ledger in Upstash Redis. It estimates each request's token cost, reserves that estimate atomically, and settles the reservation from provider-reported usage when the response completes. The ledger is a gateway admission layer; it is not a live feed from Google, NVIDIA, OpenRouter, or Matilda.
+FreeRouter keeps a local quota ledger in Upstash Redis. It estimates each request's token cost, reserves that estimate atomically, and settles the reservation from provider-reported usage when the response completes. The ledger is a gateway admission layer; it is not a live feed from Google, NVIDIA, OpenRouter, Matilda, ZenMux, or OrcaRouter.
 
 ## Modes
 

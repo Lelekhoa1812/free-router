@@ -41,3 +41,29 @@ describe("Matilda (Maincode) provider compatibility",()=>{
     expect(JSON.parse(nativeEvents[2].replace(/^data: /,""))).toMatchObject({usage:{prompt_tokens:3,completion_tokens:1,total_tokens:4}});
   });
 });
+
+describe("ZenMux and OrcaRouter provider compatibility", () => {
+  it("registers zenmux and orcarouter model profiles", () => {
+    const zenmux = MODEL_BY_ID.get("zenmux/deepseek/deepseek-v4-flash");
+    const orcarouter = MODEL_BY_ID.get("orcarouter/orcarouter/free");
+    expect(zenmux).toBeDefined();
+    expect(zenmux?.provider).toBe("zenmux");
+    expect(orcarouter).toBeDefined();
+    expect(orcarouter?.provider).toBe("orcarouter");
+  });
+
+  it("builds standard OpenAI-compatible chat bodies with streaming", () => {
+    const zenmux = MODEL_BY_ID.get("zenmux/deepseek/deepseek-v4-flash")!;
+    const body = buildProviderChatBody(zenmux, {
+      model: zenmux.id,
+      messages: [{ role: "user", content: "hello" }],
+      max_completion_tokens: 100,
+    });
+    expect(body).toEqual({
+      model: "deepseek/deepseek-v4-flash",
+      messages: [{ role: "user", content: "hello" }],
+      max_tokens: 100,
+      stream: true,
+    });
+  });
+});
