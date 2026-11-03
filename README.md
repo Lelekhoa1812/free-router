@@ -1,6 +1,6 @@
 # FreeRouter
 
-FreeRouter is a self-hosted, OpenAI-shaped gateway for configured free-tier Google AI Studio, NVIDIA NIM, and OpenRouter models. It also exposes TypeSafe Jev as a separate Decisions API. The dashboard is protected by one shared password; generated `sk-fr-` keys authorize `/v1` API calls.
+FreeRouter is a self-hosted, OpenAI-shaped gateway for configured free-tier Google AI Studio, NVIDIA NIM, and OpenRouter models. It also exposes TypeSafe Jev as a separate Decisions API. The dashboard uses an email allowlist and a rotating six-digit shared password delivered over SMTP; generated `sk-fr-` keys authorize `/v1` API calls.
 
 ## Current implementation
 
@@ -17,9 +17,11 @@ pnpm install
 pnpm dev
 ```
 
-Open `http://localhost:3000`. Sign in with `ADMIN_PASSWORD`, create a client key under **API keys**, then use `http://localhost:3000/v1` as the OpenAI-compatible base URL. A local Vercel production build is checked with `pnpm build`.
+Open `http://localhost:3000`. The first authorized address is bootstrapped from `SMTP_USER`: request a sign-in email, then enter that address and its six-digit code. Add or remove recipients and rotate the shared code under **Users**. Create a client key under **API keys**, then use `http://localhost:3000/v1` as the OpenAI-compatible base URL. A local Vercel production build is checked with `pnpm build`.
 
-The environment variable names and slots are listed in `.env.example`. Provider credentials stay server-side. Blank key slots are skipped. Keep the encryption, session, client-key hash, and cron secrets independent; rotate state encryption with a planned key version migration once existing stored responses need preservation.
+The environment variable names and slots are listed in `.env.example`. Set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, and `SMTP_PASSWORD` for password delivery; Gmail app passwords may be entered with spaces and are normalized by the mailer. `IMAP_HOST` and `IMAP_PORT` are optional and unused because this app sends mail only. Provider credentials stay server-side. Blank key slots are skipped. Keep the encryption, session, client-key hash, and cron secrets independent; rotate state encryption with a planned key version migration once existing stored responses need preservation.
+
+The six-digit dashboard password is random, encrypted in MongoDB, shared by all authorized addresses, and valid until the next rotation. The **Users** page displays it for copying. Adding an address sends the current code to that address; removing one blocks future sign-ins and deliveries. Rotating immediately invalidates existing sessions (the administrator who initiated the rotation receives a refreshed session) and emails the new code to every authorized address. The SMTP sender mailbox is the initial bootstrap user when the allowlist is empty. Sign-in email requests and failed attempts are throttled; email requests respond generically to avoid exposing allowlist membership.
 
 ## OpenAI-compatible setup
 
@@ -51,6 +53,6 @@ pnpm test
 pnpm build
 ```
 
-`pnpm smoke:models` performs a bounded live streaming smoke call for each catalog-ready provider model using local `.env` credentials. After deployment, set `FREEROUTER_BASE_URL` and `ADMIN_PASSWORD`, then run `pnpm smoke:deployment` to verify health, issue a temporary client key, exercise the OpenAI SDK endpoints and visible model routes, and revoke/delete that key automatically. The deployed smoke includes one Jev Decisions call by default; set `SMOKE_JEV=false` to skip it if Jev credits should not be consumed.
+`pnpm smoke:models` performs a bounded live streaming smoke call for each catalog-ready provider model using local `.env` credentials. After deployment, set `FREEROUTER_BASE_URL`; `pnpm smoke:deployment` reads the encrypted current dashboard password from the configured MongoDB record (or accepts `FREEROUTER_ADMIN_PASSWORD` locally), signs in as `SMTP_USER` (or `FREEROUTER_ADMIN_EMAIL`), creates a temporary client key, exercises OpenAI SDK endpoints and visible model routes, then revokes and deletes the key. The runner does not print the access password or request a new email. The deployed smoke includes one Jev Decisions call by default; set `SMOKE_JEV=false` to skip it if Jev credits should not be consumed.
 
 See [API and routing contracts](docs/API_CONTRACTS.md), the [operations guide](docs/OPERATIONS.md), and [implementation status](docs/IMPLEMENTATION_STATUS.md) for endpoint behavior, deployment steps, validation procedures, and remaining release gates.

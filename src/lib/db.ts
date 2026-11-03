@@ -19,6 +19,8 @@ export async function ensureIndexes() {
     const db = await connectDb();
     await Promise.all([
       db.collection("client_keys").createIndex({ tokenHash: 1 }, { unique: true, name: "token_hash" }),
+      db.collection("admin_users").createIndex({ email: 1 }, { unique: true, name: "admin_user_email" }),
+      db.collection("admin_auth").createIndex({ rotatedAt: 1 }, { name: "admin_auth_rotation" }),
       db.collection("credential_health").createIndex({ provider: 1, fingerprint: 1 }, { unique: true, name: "credential_health_key" }),
       db.collection("credential_health").createIndex({ cooldownUntil: 1 }, { name: "credential_health_cooldown" }),
       db.collection("model_bindings").createIndex({ provider:1,model:1,fingerprint:1 },{unique:true,name:"model_binding_key"}),

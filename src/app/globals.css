@@ -90,3 +90,59 @@ tr:last-child td { border-bottom: none; }
 .storage-health.is-warning{color:#f3c477;border-color:#5a4828;background:#2b2315}.capacity-track.over-target span{background:linear-gradient(90deg,#e7b65f,#ef916b)}.capacity-track.near-limit span{background:linear-gradient(90deg,#ef916b,#fb747a)}.storage-budget.over-target .budget-track span{background:#e9b85f}.storage-budget b{white-space:nowrap}
 .retention-unavailable{color:#e8bc70!important}.maintenance-summary{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 1px;border-bottom:1px solid #20272d}.maintenance-summary span{display:flex;align-items:center;gap:7px;color:#b9c7c1;font-size:9px}.maintenance-summary i{width:6px;height:6px;border-radius:50%;background:#8bcba7;box-shadow:0 0 0 3px #58d6a21a}.maintenance-summary small{color:#7e8a91;font-size:8px;text-align:right}.play-submit-row p{flex-wrap:wrap}.play-submit-row p small{flex-basis:100%;margin-left:21px;color:#718087;font-size:8px}.run-metrics-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.run-metrics-grid span{min-height:22px;line-height:1.4}.run-metrics-grid b{font-variant-numeric:tabular-nums}
 @media(max-width:700px){.maintenance-summary{align-items:flex-start;flex-direction:column;gap:5px}.maintenance-summary small{text-align:left}.run-metrics-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* Authorized recipient and shared-password management. */
+.users-page{display:grid;gap:13px;max-width:1100px}
+.users-password-card{padding:19px 21px}
+.users-password-top{display:flex;align-items:flex-start;justify-content:space-between;gap:18px}
+.users-password-copy{min-width:0}
+.users-kicker{display:inline-flex;align-items:center;gap:6px;color:#85caa1;font-size:9px;font-weight:700;letter-spacing:.12em}
+.users-password-copy h2{margin:8px 0 4px;font-size:14px;letter-spacing:-.02em}
+.users-password-copy p,.users-list-heading p{margin:0;color:#929da3;font-size:10px;line-height:1.55}
+.users-rotate-button{flex:none;min-height:32px;padding:7px 10px;font-size:10px;font-weight:600}
+.users-rotate-button:disabled{opacity:.55;cursor:not-allowed}
+.users-spin{animation:spin .9s linear infinite}
+.users-password-row{display:flex;align-items:center;gap:7px;min-height:48px;margin-top:14px;padding:5px 8px 5px 13px;border:1px solid #283238;border-radius:9px;background:#0b0f12}
+.users-password-value{flex:1;color:#d8ede0;font-size:21px;letter-spacing:.2em;font-variant-numeric:tabular-nums}
+.users-copy-button{width:30px;height:30px;border:1px solid #273139;background:#151b20}
+.users-copy-label{min-width:34px;color:#87939a;font-size:9px}
+.users-password-loading,.users-password-unavailable{color:#8f9aa0;font-size:10px}
+.users-password-meta{display:flex;flex-wrap:wrap;gap:7px 20px;margin-top:9px;color:#7e8a91;font-size:9px}
+.users-password-meta time{color:#bac5c9}
+.users-rotation-note{display:flex;align-items:center;gap:7px;margin:13px 0 0;padding-top:11px;border-top:1px solid #20272d;color:#c6ac75;font-size:9px;line-height:1.5}
+.users-rotation-note svg{flex:none}
+.users-list-card{margin:0;padding:17px 20px}
+.users-list-heading{margin-bottom:14px}
+.users-title-line{display:flex;align-items:center;gap:8px}
+.users-title-line>svg{color:#85bd9a}
+.users-title-line h2{margin:0;font-size:13px}
+.users-count{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 6px;border:1px solid #2d3935;border-radius:999px;background:#151e1a;color:#abd7b9;font-size:9px;font-variant-numeric:tabular-nums}
+.users-list-heading p{margin-top:5px}
+.users-add-form{display:grid;gap:7px;padding:12px;border:1px solid #242e33;border-radius:9px;background:#0d1114}
+.users-email-label{color:#bfc9cd;font-size:9px;font-weight:650}
+.users-add-controls{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}
+.users-add-controls .field{min-width:0;height:36px;padding:8px 10px;font-size:10px}
+.users-add-button{min-height:36px;padding:7px 10px;font-size:10px;white-space:nowrap}
+.users-add-button:disabled{opacity:.5;cursor:not-allowed}
+.users-alert{display:flex;align-items:center;gap:8px;margin-top:10px;padding:9px 11px;border:1px solid;border-radius:8px;font-size:10px;line-height:1.45}
+.users-alert.error{color:#ff9aa1;border-color:#5b343a;background:#25171a}
+.users-alert.success{color:#a8dbbb;border-color:#2b4938;background:#121e18}
+.users-alert .text-button{margin-left:auto;color:inherit;font-size:9px}
+.users-list-state{padding:22px 10px;text-align:center;color:#89959b;font-size:10px}
+.users-empty{display:flex;flex-direction:column;align-items:center;text-align:center;padding:24px 12px 14px;color:#8e999e}
+.users-empty-icon{display:grid;place-items:center;width:34px;height:34px;border:1px solid #293532;border-radius:10px;background:#151e1a;color:#9ed0ae;margin-bottom:9px}
+.users-empty b{color:#dce5e2;font-size:10px}
+.users-empty p{max-width:370px;margin:5px 0 0;font-size:9px;line-height:1.5}
+.users-table-wrap{margin-top:9px}
+.users-table{min-width:450px}
+.users-table th,.users-table td{padding:10px 11px;font-size:10px}
+.users-table th{font-size:8px}
+.users-email-cell{overflow-wrap:anywhere;color:#d4dfdd}
+.users-actions-cell{text-align:right}
+.users-remove-button{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:28px;padding:5px 7px;border:1px solid transparent;border-radius:6px;background:transparent;color:#9ca7aa;font-size:9px}
+.users-remove-button:hover:not(:disabled){border-color:#59353b;background:#25171a;color:#ff9aa1}
+.users-remove-button:disabled{opacity:.5;cursor:not-allowed}
+.users-page button:focus-visible,.login-card button:focus-visible{outline:2px solid #8dc9a6;outline-offset:2px}
+.login-code-button{justify-content:center;min-height:36px;margin:1px 0 3px;border-color:#2e3b3e;background:#111a19;color:#c8e6d2;font-size:10px}
+.login-notice{padding:8px 9px!important;border:1px solid #2b4938;border-radius:7px;background:#121e18;color:#a8dbbb!important;font-size:10px!important;margin:0!important}
+@media(max-width:700px){.users-password-card{padding:15px}.users-password-top{flex-direction:column;align-items:stretch;gap:11px}.users-rotate-button{align-self:flex-start}.users-list-card{padding:14px}.users-add-controls{grid-template-columns:1fr}.users-add-button{justify-self:start}.users-password-meta{flex-direction:column;gap:5px}.users-rotation-note{align-items:flex-start}}

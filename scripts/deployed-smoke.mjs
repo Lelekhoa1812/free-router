@@ -1,10 +1,13 @@
 import nextEnv from '@next/env';
 import OpenAI from 'openai';
+import { MongoClient } from 'mongodb';
+import { createDecipheriv, createHash } from 'node:crypto';
+import { gunzipSync } from 'node:zlib';
 const { loadEnvConfig } = nextEnv;
 loadEnvConfig(process.cwd());
 const base = (process.env.FREEROUTER_BASE_URL || '').replace(/\/$/, '');
-const password = process.env.ADMIN_PASSWORD;
-if (!base || !password) throw new Error('Set FREEROUTER_BASE_URL and ADMIN_PASSWORD in the local environment.');
+const adminEmail = (process.env.FREEROUTER_ADMIN_EMAIL || process.env.SMTP_USER || '').trim().toLowerCase();
+if (!base || !adminEmail) throw new Error('Set FREEROUTER_BASE_URL and SMTP_USER (or FREEROUTER_ADMIN_EMAIL) in the local environment.');
 const origin = base;
 const results = [];
 let clientKeyId;
@@ -12,9 +15,42 @@ let apiKey;
 let cookie;
 const record = (name, status, detail) => { const item = { name, status, ...(detail ? { detail } : {}) }; results.push(item); console.log(JSON.stringify(item)); };
 const request = (path, init = {}) => fetch(`${base}${path}`, { ...init, headers: { ...(init.headers || {}), ...(cookie ? { cookie } : {}), origin } });
+async function readCurrentAccessState() {
+  if (/^\d{6}$/.test(process.env.FREEROUTER_ADMIN_PASSWORD || '')) return { code: process.env.FREEROUTER_ADMIN_PASSWORD, lastSentAt: null };
+  const uri = process.env.MONGO_DB_CONNECTION_STRING;
+  const encryptionSecret = process.env.STATE_ENCRYPTION_KEY;
+  if (!uri || !encryptionSecret || Buffer.byteLength(encryptionSecret) < 32) throw new Error('Set FREEROUTER_ADMIN_PASSWORD or provide the configured MongoDB and state-encryption variables locally.');
+  const client = new MongoClient(uri, { maxPoolSize: 1, serverSelectionTimeoutMS: 4000, connectTimeoutMS: 4000, appName: 'FreeRouter deployment smoke' });
+  try {
+    const db = client.db(process.env.MONGODB_DB || 'freerouter');
+    const auth = await db.collection('admin_auth').findOne({ _id: 'current' });
+    const encrypted = auth?.password;
+    if (!encrypted || ![1, 2].includes(encrypted.v)) throw new Error('No current email access password is available for deployment smoke.');
+    const key = createHash('sha256').update(Buffer.from(encryptionSecret)).digest();
+    const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(encrypted.nonce, 'base64url'));
+    decipher.setAAD(Buffer.from('freerouter:admin-access-password:v1'));
+    decipher.setAuthTag(Buffer.from(encrypted.tag, 'base64url'));
+    const decrypted = Buffer.concat([decipher.update(Buffer.from(encrypted.body, 'base64url')), decipher.final()]);
+    const raw = encrypted.v === 2 ? gunzipSync(decrypted, { maxOutputLength: 8 * 1024 * 1024 }) : decrypted;
+    const code = JSON.parse(raw.toString('utf8')).code;
+    if (typeof code !== 'string' || !/^\d{6}$/.test(code)) throw new Error('Stored access password has an invalid format.');
+    return { code, lastSentAt: auth.lastSentAt ? new Date(auth.lastSentAt) : null };
+  } finally { await client.close(); }
+}
 try {
-  const login = await request('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password }) });
-  if (!login.ok) throw new Error(`Admin login failed (${login.status}); verify the production ADMIN_PASSWORD.`);
+  if (process.env.SMOKE_REQUEST_CODE === 'true') {
+    let previousSentAt = null;
+    try { previousSentAt = (await readCurrentAccessState()).lastSentAt; } catch { /* first password may be bootstrapped by the request */ }
+    const mailed = await fetch(`${base}/api/auth/request-code`, { method: 'POST', headers: { 'content-type': 'application/json', origin }, body: JSON.stringify({ email: adminEmail }) });
+    if (!mailed.ok) throw new Error(`Email sign-in request failed (${mailed.status}).`);
+    const sentState = await readCurrentAccessState();
+    const delivered = Boolean(sentState.lastSentAt && (!previousSentAt || sentState.lastSentAt.getTime() > previousSentAt.getTime()));
+    record('Email sign-in delivery', delivered ? 'passed' : 'failed', `HTTP ${mailed.status}; authorized mailbox delivery ${delivered ? 'recorded' : 'not recorded'}`);
+    if (!delivered) throw new Error('SMTP delivery was not recorded; check the production mail configuration without exposing the password.');
+  }
+  const password = (await readCurrentAccessState()).code;
+  const login = await request('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: adminEmail, password }) });
+  if (!login.ok) throw new Error(`Admin login failed (${login.status}); verify that the configured smoke email is authorized and the local MongoDB credentials match this deployment.`);
   cookie = (login.headers.getSetCookie?.() || [login.headers.get('set-cookie') || '']).map((x) => x.split(';')[0]).join('; ');
   const create = await request('/api/admin/keys', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: `deployed-smoke-${Date.now()}`, description: 'Temporary automated deployment verification', scopes: ['chat', 'responses', 'decisions'], models: ['*'] }) });
   if (!create.ok) throw new Error(`Temporary client-key creation failed (${create.status}).`);
@@ -30,7 +66,7 @@ try {
   record('OpenAI SDK models.list', modelList.data.length ? 'passed' : 'failed', `${modelList.data.length} visible models`);
 
   const exactModels = modelList.data.filter((m) => ['google', 'nvidia', 'openrouter'].includes(m.owned_by) && m.id.includes('/'));
-  const routes = process.env.SMOKE_MODELS === 'false' ? [] : [...new Set(['fr-code', 'fr-auto', ...exactModels.map((m) => m.id)])];
+  const routes = process.env.SMOKE_MODELS === 'false' ? ['fr-code', 'fr-auto'] : [...new Set(['fr-code', 'fr-auto', ...exactModels.map((m) => m.id)])];
   for (const model of routes) {
     const started = Date.now(); let text = ''; let finish = false;
     try {

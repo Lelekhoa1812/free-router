@@ -7,7 +7,7 @@ This map keeps the implementation reviewable against the FreeRouter product plan
 | Next.js application, TypeScript, Vercel Node routes | Implemented | `src/app`, `vercel.json`, build check |
 | MongoDB only durable store | Implemented foundation | Mongo client pool and indexes exist; storage budget accounting and recovery remain |
 | Upstash atomic minute admission and expiring concurrency leases | Partial | Lua admission covers global/client/provider/model scopes; provider-specific daily/token limits, Redis epoch recovery, durable reservation journal remain |
-| Dashboard password, signed cookie, failed-login throttle | Implemented foundation | `/api/auth/*`; add CSRF/origin policy test and session invalidation suite |
+| Email-based dashboard access, Users page, signed cookie, failed-login throttle | Implemented and covered by mocked route/session tests | Shared six-digit code encrypted in MongoDB; sender mailbox bootstrap; SMTP delivery is pending live deployment verification |
 | Generated client keys, scope/model enforcement, revocation | Implemented foundation | `/api/admin/keys`; full limits/expiry/audit/cascade integration tests remain |
 | Google, NVIDIA, OpenRouter seed inventory | Implemented snapshot | `src/lib/models/catalog.ts`; daily discovery and full model/capability certification remain |
 | Chat Completions streaming/nonstreaming | Implemented foundation | `/v1/chat/completions`; provider-specific tests, schema validation, retry/quota classification, and SDK end-to-end suite remain |

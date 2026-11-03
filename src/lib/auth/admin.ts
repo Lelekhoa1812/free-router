@@ -1,15 +1,34 @@
 import { cookies } from "next/headers";
-import { env } from "@/lib/env";
-import { verifySignature, signValue, safeCompare } from "@/lib/crypto";
+import { verifySignature, signValue } from "@/lib/crypto";
+import { currentAuthEpoch, normalizeAdminEmail } from "@/lib/auth/access";
+import { getDb } from "@/lib/db";
+
 const COOKIE = "fr_admin";
-const sessionVersion = () => signValue(`admin-session:${env.adminPassword ?? ""}`).slice(0, 16);
-export async function getAdminSession() {
-  const token = (await cookies()).get(COOKIE)?.value;
-  if (!token) return false;
+type SessionData = { exp: number; epoch: number; email: string };
+
+async function parseSession(token: string | undefined): Promise<SessionData | null> {
+  if (!token) return null;
   const [payload, signature] = token.split(".");
-  if (!payload || !signature || !verifySignature(payload, signature)) return false;
-  try { const data = JSON.parse(Buffer.from(payload, "base64url").toString()); return data.exp > Date.now() && data.ver === sessionVersion(); } catch { return false; }
+  if (!payload || !signature || !verifySignature(payload, signature)) return null;
+  try {
+    const data = JSON.parse(Buffer.from(payload, "base64url").toString()) as SessionData;
+    if (!data || !Number.isFinite(data.exp) || !Number.isInteger(data.epoch) || typeof data.email !== "string" || data.exp <= Date.now()) return null;
+    if (data.epoch !== await currentAuthEpoch()) return null;
+    const db = await getDb();
+    if (!await db.collection("admin_users").findOne({ email: normalizeAdminEmail(data.email) }, { projection: { _id: 1 } })) return null;
+    return data;
+  } catch { return null; }
 }
-export function createAdminSession() { const payload = Buffer.from(JSON.stringify({ exp: Date.now() + 12 * 60 * 60_000, ver: sessionVersion() })).toString("base64url"); return `${payload}.${signValue(payload)}`; }
-export function validAdminPassword(input: string) { return Boolean(env.adminPassword && safeCompare(input, env.adminPassword)); }
+
+export async function getAdminSessionEmail() {
+  const token = (await cookies()).get(COOKIE)?.value;
+  return (await parseSession(token))?.email ?? null;
+}
+export async function getAdminSession() { return Boolean(await getAdminSessionEmail()); }
+export async function createAdminSession(email: string, epoch?: number) {
+  const sessionEpoch = epoch ?? await currentAuthEpoch();
+  const payload = Buffer.from(JSON.stringify({ exp: Date.now() + 12 * 60 * 60_000, epoch: sessionEpoch, email: normalizeAdminEmail(email) })).toString("base64url");
+  return `${payload}.${signValue(payload)}`;
+}
+export function adminCookieOptions() { return { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "strict" as const, path: "/", maxAge: 43200 }; }
 export const adminCookieName = COOKIE;
