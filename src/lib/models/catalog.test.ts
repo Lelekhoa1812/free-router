@@ -29,4 +29,9 @@ describe("model registry",()=>{
     expect(publicModels().map(m=>m.id)).not.toContain(id);
     expect(ALIASES["fr-code"]).not.toContain(id);
   });
+  it("keeps Gemini 3 Flash Preview out of public discovery after repeated production gateway failures",()=>{
+    const id="google/gemini-3-flash-preview";
+    expect(MODEL_BY_ID.get(id)?.status).toBe("unavailable");
+    expect(publicModels().map(m=>m.id)).not.toContain(id);
+  });
 });

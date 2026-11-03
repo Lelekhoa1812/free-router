@@ -7,7 +7,7 @@ export interface ModelProfile {
 }
 
 const rows: Array<[Provider,string,string,number|null,number|null,CapabilityState,CapabilityState,CapabilityState,CapabilityState,ModelProfile["latency"],ModelProfile["status"],string?]> = [
-  ["google","gemini-3-flash-preview","Gemini 3 Flash Preview",1048576,65536,"passed","passed","passed","unknown","standard","ready"],
+  ["google","gemini-3-flash-preview","Gemini 3 Flash Preview",1048576,65536,"passed","passed","passed","unknown","standard","unavailable","Two production-gateway SSE attempts on 3 November 2026 returned upstream_unavailable; excluded from public discovery pending successful retest."],
   ["google","gemini-3.1-flash-lite-preview","Gemini 3.1 Flash-Lite Preview",1048576,65536,"passed","passed","passed","unknown","fast","ready"],
   ["google","gemini-3.1-flash-lite","Gemini 3.1 Flash-Lite",1048576,65536,"passed","passed","passed","unknown","fast","ready"],
   ["google","gemini-3.5-flash","Gemini 3.5 Flash",1048576,65536,"passed","passed","passed","unknown","standard","ready"],
