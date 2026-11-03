@@ -1,0 +1,65 @@
+name: Feature request
+description: Propose a capability, contract or operations change.
+title: "[feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Lead with the problem. A proposal that starts from one implementation is hard to compare against the alternatives, and this gateway constrains more than it appears — free-tier quotas, provider quirks and the OpenAI contract all pull in different directions.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: The behaviour that is missing or painful today, who hits it, and what they do instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+      description: What should happen differently, described from the caller's or operator's side. Include request and response shapes when they change.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Affected surface
+      description: Everything this touches. A change usually crosses more than one.
+      multiple: true
+      options:
+        - /v1 API contract
+        - Admin API or dashboard
+        - Provider routing and health
+        - Storage and persistence
+        - Operations and configuration
+        - Documentation
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and constraints
+      description: What must keep working, where the behaviour would live, and the constraints an implementer has to respect — stored documents, migrations, credentials, or provider-specific limits.
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches, including doing nothing, and why they fit this project worse.
+    validations:
+      required: false
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence or prior art
+      description: SDK behaviour, provider documentation, comparable gateways — with links. If you intend to reuse code, note its licence.
+    validations:
+      required: false

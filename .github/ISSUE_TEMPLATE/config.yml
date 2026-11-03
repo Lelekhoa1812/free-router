@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Setup, deployment and provider credentials
+    url: https://github.com/Lelekhoa1812/free-router/blob/main/docs/OPERATIONS.md
+    about: How the service is laid out, what it needs to run, and how to verify a deployment.
+  - name: API contracts and limits
+    url: https://github.com/Lelekhoa1812/free-router/blob/main/docs/API_CONTRACTS.md
+    about: Supported request fields, aliases, provider constraints and error shapes. Worth checking before filing a bug.
+  - name: Known gaps and release blockers
+    url: https://github.com/Lelekhoa1812/free-router/blob/main/docs/IMPLEMENTATION_STATUS.md
+    about: What is already known to be unfinished, so a new issue does not duplicate it.
