@@ -2,6 +2,7 @@ const PROVIDER_LOGOS = {
   google: { src: "/brand/providers/google-ai-studio.png", width: 96, height: 96 },
   nvidia: { src: "/brand/providers/nvidia.svg", width: 164, height: 30 },
   openrouter: { src: "/brand/providers/openrouter.svg", width: 1024, height: 730 },
+  matilda: { src: "/brand/providers/matilda.svg", width: 118, height: 118 },
   zenmux: { src: "/brand/providers/zenmux.svg", width: 160, height: 160 },
   orcarouter: { src: "/brand/providers/orcarouter.png", width: 180, height: 180 },
 } as const;
