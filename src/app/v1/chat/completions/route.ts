@@ -37,8 +37,6 @@ function supportsRequest(profile: ModelProfile, body: CanonicalChat) {
   // rather than silently changing a caller's semantics.
   if (profile.provider === "matilda") {
     if (body.temperature !== undefined || body.top_p !== undefined || body.stop !== undefined || body.reasoning_effort !== undefined) return false;
-    if (body.tool_choice !== undefined || body.parallel_tool_calls !== undefined) return false;
-    if ((body.response_format as any)?.type === "json_object") return false;
   }
   if (body.tools && body.tools.length && profile.tools !== "passed") return false;
   if (body.tools?.some((t:any)=>t?.function?.strict===true) && profile.schema !== "passed") return false;

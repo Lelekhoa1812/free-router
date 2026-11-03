@@ -50,7 +50,11 @@ try {
     if (!delivered) throw new Error('SMTP delivery was not recorded; check the production mail configuration without exposing the password.');
   }
   const password = (await readCurrentAccessState()).code;
-  const login = await request('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: adminEmail, password }) });
+  const loginRequirementsResponse = await request('/api/auth/login');
+  if (!loginRequirementsResponse.ok) throw new Error(`Could not read sign-in requirements (${loginRequirementsResponse.status}).`);
+  const loginRequirements = await loginRequirementsResponse.json();
+  const loginBody = loginRequirements.emailRequired ? { email: adminEmail, password } : { password };
+  const login = await request('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(loginBody) });
   if (!login.ok) throw new Error(`Admin login failed (${login.status}); verify that the configured smoke email is authorized and the local MongoDB credentials match this deployment.`);
   cookie = (login.headers.getSetCookie?.() || [login.headers.get('set-cookie') || '']).map((x) => x.split(';')[0]).join('; ');
   const create = await request('/api/admin/keys', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: `deployed-smoke-${Date.now()}`, description: 'Temporary automated deployment verification', scopes: ['chat', 'responses', 'decisions'], models: ['*'] }) });
@@ -82,14 +86,16 @@ try {
       } catch (error) {
         record('Provider-key add/remove and secret redaction', 'failed', error?.message || 'credential management failed');
       }
-    } else record('Provider-key add/remove and secret redaction', secret ? 'skipped' : 'failed', secret ? `OpenRouter slot 9 is occupied; inventory ${summary}` : 'No local OpenRouter test key is configured.');
+    } else record('Provider-key add/remove and secret redaction', 'skipped', secret ? `OpenRouter slot 9 is occupied; inventory ${summary}` : 'No local OpenRouter test key is configured.');
     record('MongoDB provider slot inventory', 'passed', summary);
   }
   record('OpenAI SDK models.list', modelList.data.length ? 'passed' : 'failed', `${modelList.data.length} visible models`);
 
   const exactModels = modelList.data.filter((m) => ['google', 'nvidia', 'openrouter', 'matilda'].includes(m.owned_by) && m.id.includes('/'));
   const selectedModels = process.env.SMOKE_MODEL_IDS?.split(',').map((value) => value.trim()).filter(Boolean);
-  const routes = process.env.SMOKE_MODELS === 'false' ? ['fr-code', 'fr-auto'] : selectedModels?.length ? [...new Set(['fr-code', 'fr-auto', ...selectedModels])] : [...new Set(['fr-code', 'fr-auto', ...exactModels.map((m) => m.id)])];
+  const matildaSmoke = process.env.SMOKE_MATILDA === 'true';
+  const routes = matildaSmoke ? ['matilda/matilda'] : process.env.SMOKE_MODELS === 'false' ? ['fr-code', 'fr-auto'] : selectedModels?.length ? [...new Set(['fr-code', 'fr-auto', ...selectedModels])] : [...new Set(['fr-code', 'fr-auto', ...exactModels.map((m) => m.id)])];
+  const chatModel = matildaSmoke ? 'matilda/matilda' : 'fr-code';
   for (const model of routes) {
     const started = Date.now(); let text = ''; let finish = false;
     try {
@@ -100,41 +106,51 @@ try {
   }
 
   try {
-    const result = await api.chat.completions.create({ model: 'fr-code', messages: [{ role: 'user', content: 'Reply with exactly FR_OK.' }], stream: false, reasoning_effort: 'low', max_completion_tokens: 512 });
+    const result = await api.chat.completions.create({ model: chatModel, messages: [{ role: 'user', content: 'Reply with exactly FR_OK.' }], stream: false, ...(!matildaSmoke ? { reasoning_effort: 'low' } : {}), max_completion_tokens: 512 });
     record('Chat nonstreaming response', typeof result.choices[0]?.message?.content === 'string' ? 'passed' : 'failed');
   } catch (error) { record('Chat nonstreaming response', 'failed', `HTTP ${error?.status || 'network'}${error?.code ? ` ${error.code}` : ''}`); }
 
   try {
     const tools = [{ type: 'function', function: { name: 'smoke_echo', description: 'Return a test value to verify the FreeRouter tool protocol.', parameters: { type: 'object', properties: { value: { type: 'string' } }, required: ['value'], additionalProperties: false } } }];
-    const first = await api.chat.completions.create({ model: 'fr-code', messages: [{ role: 'user', content: 'Call smoke_echo with value FR_TOOL.' }], tools, tool_choice: { type: 'function', function: { name: 'smoke_echo' } }, reasoning_effort: 'low', max_completion_tokens: 512 });
+    const first = await api.chat.completions.create({ model: chatModel, messages: [{ role: 'user', content: 'Call smoke_echo with value FR_TOOL.' }], tools, tool_choice: { type: 'function', function: { name: 'smoke_echo' } }, ...(!matildaSmoke ? { reasoning_effort: 'low' } : {}), max_completion_tokens: 512 });
     const call = first.choices[0]?.message?.tool_calls?.[0];
     const args = call && JSON.parse(call.function.arguments);
     if (!call || args?.value !== 'FR_TOOL') throw new Error('required tool call was missing or invalid');
-    const second = await api.chat.completions.create({ model: 'fr-code', messages: [{ role: 'user', content: 'Call smoke_echo with value FR_TOOL.' }, first.choices[0].message, { role: 'tool', tool_call_id: call.id, content: 'FR_TOOL' }], tools, reasoning_effort: 'low', max_completion_tokens: 512 });
+    const second = await api.chat.completions.create({ model: chatModel, messages: [{ role: 'user', content: 'Call smoke_echo with value FR_TOOL.' }, first.choices[0].message, { role: 'tool', tool_call_id: call.id, content: 'FR_TOOL' }], tools, ...(!matildaSmoke ? { reasoning_effort: 'low' } : {}), max_completion_tokens: 512 });
     record('Chat tool-call continuation', typeof second.choices[0]?.message?.content === 'string' ? 'passed' : 'failed');
   } catch (error) { record('Chat tool-call continuation', 'failed', `HTTP ${error?.status || 'contract'}${error?.code ? ` ${error.code}` : ''}`); }
 
   try {
     const image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j2Z0AAAAASUVORK5CYII=';
-    const stream = await api.chat.completions.create({ model: 'fr-vision', messages: [{ role: 'user', content: [{ type: 'text', text: 'Describe this image in a few words.' }, { type: 'image_url', image_url: { url: image } }] }], reasoning_effort: 'low', max_completion_tokens: 512, stream: true });
+    const stream = await api.chat.completions.create({ model: matildaSmoke ? 'matilda/matilda' : 'fr-vision', messages: [{ role: 'user', content: [{ type: 'text', text: 'Describe this image in a few words.' }, { type: 'image_url', image_url: { url: image } }] }], ...(!matildaSmoke ? { reasoning_effort: 'low' } : {}), max_completion_tokens: 512, stream: true });
     let text = ''; for await (const chunk of stream) text += chunk.choices?.[0]?.delta?.content || '';
-    record('Chat vision SSE', text.length > 0 ? 'passed' : 'failed', `${text.length} visible chars`);
-  } catch (error) { record('Chat vision SSE', 'failed', `HTTP ${error?.status || 'network'}${error?.code ? ` ${error.code}` : ''}`); }
+    record(matildaSmoke ? 'Matilda vision capability gate' : 'Chat vision SSE', !matildaSmoke && text.length > 0 ? 'passed' : 'failed', `${text.length} visible chars; unsupported Matilda vision was unexpectedly accepted=${matildaSmoke}`);
+  } catch (error) {
+    const expectedUnsupported = matildaSmoke && error?.status === 400;
+    record(matildaSmoke ? 'Matilda vision capability gate' : 'Chat vision SSE', expectedUnsupported ? 'passed' : 'failed', matildaSmoke ? `HTTP ${error?.status || 'network'}; unsupported capability rejected` : `HTTP ${error?.status || 'network'}${error?.code ? ` ${error.code}` : ''}`);
+  }
 
   try {
-    const json = await api.chat.completions.create({ model: 'fr-code', messages: [{ role: 'user', content: 'Return a JSON object with ok set to true.' }], reasoning_effort: 'low', response_format: { type: 'json_schema', json_schema: { name: 'smoke', strict: true, schema: { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false } } } });
+    const json = await api.chat.completions.create({ model: chatModel, messages: [{ role: 'user', content: 'Return a JSON object with ok set to true.' }], ...(!matildaSmoke ? { reasoning_effort: 'low' } : {}), response_format: { type: 'json_schema', json_schema: { name: 'smoke', strict: true, schema: { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false } } } });
     const value = JSON.parse(json.choices[0].message.content); record('Chat strict JSON Schema', value.ok === true ? 'passed' : 'failed');
   } catch (error) { record('Chat strict JSON Schema', 'failed', `HTTP ${error?.status || 'network'}${error?.code ? ` ${error.code}` : ''}`); }
 
+  if (matildaSmoke) {
+    try {
+      const json = await api.chat.completions.create({ model: chatModel, messages: [{ role: 'user', content: 'Return JSON with ok set to true.' }], response_format: { type: 'json_object' } });
+      const value = JSON.parse(json.choices[0].message.content); record('Chat JSON mode', value.ok === true ? 'passed' : 'failed');
+    } catch (error) { record('Chat JSON mode', 'failed', `HTTP ${error?.status || 'network'}${error?.code ? ` ${error.code}` : ''}`); }
+  }
+
   try {
-    const response = await api.responses.create({ model: 'fr-code', input: 'Reply with exactly FR_OK.', reasoning: { effort: 'low' }, store: false, stream: true });
+    const response = await api.responses.create({ model: chatModel, input: 'Reply with exactly FR_OK.', ...(!matildaSmoke ? { reasoning: { effort: 'low' } } : {}), store: false, stream: true });
     let terminal = false; let outputText = 0;
     for await (const event of response) { if (event.type === 'response.completed') terminal = true; if (event.type === 'response.output_text.delta') outputText += event.delta.length; }
     record('Responses SSE store:false', terminal && outputText > 0 ? 'passed' : 'failed', `text=${outputText}; completed=${terminal}`);
   } catch (error) { record('Responses SSE store:false', 'failed', `HTTP ${error?.status || 'network'}${error?.code ? ` ${error.code}` : ''}`); }
 
   try {
-    const response = await api.responses.create({ model: 'fr-code', input: 'Reply with exactly FR_OK.', reasoning: { effort: 'low' }, store: true });
+    const response = await api.responses.create({ model: chatModel, input: 'Reply with exactly FR_OK.', ...(!matildaSmoke ? { reasoning: { effort: 'low' } } : {}), store: true });
     const retrieved = await api.responses.retrieve(response.id);
     const deleted = await api.responses.delete(response.id);
     record('Responses stored retrieve/delete', retrieved.id === response.id && deleted.deleted === true ? 'passed' : 'failed');

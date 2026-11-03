@@ -11,18 +11,23 @@ describe("Chat Completions request validation",()=>{
 
 describe("Matilda (Maincode) provider compatibility",()=>{
   const matilda=MODEL_BY_ID.get("matilda/matilda")!;
-  it("is registered as ready and does not claim tools or vision",()=>{
+  it("is registered as ready with only directly verified capabilities",()=>{
     expect(matilda).toBeDefined();
     expect(matilda.status).toBe("ready");
-    expect(matilda.tools).toBe("unsupported");
+    expect(matilda.tools).toBe("passed");
+    expect(matilda.schema).toBe("passed");
     expect(matilda.vision).toBe("unsupported");
   });
   it("is published once its gateway path is certified",()=>{
     expect(publicModels().map((model) => model.id)).toContain("matilda/matilda");
   });
-  it("sends only the fields Maincode accepts and keeps upstream streaming enabled",()=>{
+  it("maps verified OpenAI tool, JSON and output fields while keeping upstream streaming enabled",()=>{
     const body=buildProviderChatBody(matilda,{model:matilda.id,messages:[{role:"user",content:"hi"}],temperature:0.2,top_p:0.9,stop:["x"],tools:[{type:"function",function:{name:"f",parameters:{}}}],tool_choice:"auto",parallel_tool_calls:true,reasoning_effort:"high",stream_options:{include_usage:true},user:"u",max_completion_tokens:64,response_format:{type:"json_schema",json_schema:{name:"x",schema:{type:"object"}}}});
-    expect(body).toEqual({model:"matilda",messages:[{role:"user",content:"hi"}],stream:true,max_tokens:64,response_format:{type:"json_schema",json_schema:{name:"x",schema:{type:"object"}}}});
+    expect(body).toEqual({model:"matilda",messages:[{role:"user",content:"hi"}],stream:true,max_tokens:64,response_format:{type:"json_schema",json_schema:{name:"x",schema:{type:"object"}}},tools:[{type:"function",function:{name:"f",parameters:{}}}],tool_choice:"auto",parallel_tool_calls:true});
+  });
+  it("forwards OpenAI JSON mode and preserves system and developer messages",()=>{
+    const messages=[{role:"system",content:"System instruction"},{role:"developer",content:"Developer instruction"},{role:"user",content:"Hello"}];
+    expect(buildProviderChatBody(matilda,{model:matilda.id,messages,response_format:{type:"json_object"}})).toEqual({model:"matilda",messages,stream:true,response_format:{type:"json_object"}});
   });
   it("enforces Maincode's per-message and per-request limits",()=>{
     expect(()=>buildProviderChatBody(matilda,{model:matilda.id,messages:[{role:"user",content:"x".repeat(16001)}]})).toThrow(/16,000/);
@@ -39,6 +44,12 @@ describe("Matilda (Maincode) provider compatibility",()=>{
     const native=completionToSse({id:"cmpl_2",created:1,choices:[{message:{content:"ok"}}],usage:{input_tokens:3,output_tokens:1}},"matilda");
     const nativeEvents=(await native.text()).trim().split("\n\n");
     expect(JSON.parse(nativeEvents[2].replace(/^data: /,""))).toMatchObject({usage:{prompt_tokens:3,completion_tokens:1,total_tokens:4}});
+  });
+  it("preserves tool calls when bridging a non-SSE Matilda completion",async()=>{
+    const response=completionToSse({id:"cmpl_tool",choices:[{message:{content:null,tool_calls:[{id:"call_1",type:"function",function:{name:"lookup",arguments:'{"id":1}'}}]},finish_reason:"tool_calls"}]},"matilda");
+    const events=(await response.text()).trim().split("\n\n").filter((event)=>event.startsWith("data: {")).map((event)=>JSON.parse(event.slice(6)));
+    expect(events[1].choices[0].delta.tool_calls[0]).toMatchObject({index:0,id:"call_1",type:"function",function:{name:"lookup",arguments:'{"id":1}'}});
+    expect(events[2].choices[0].finish_reason).toBe("tool_calls");
   });
 });
 
