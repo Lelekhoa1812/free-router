@@ -48,6 +48,8 @@ const PROVIDER_IDS = [
   "nvidia",
   "openrouter",
   "matilda",
+  "zenmux",
+  "orcarouter",
 ] as const satisfies readonly Provider[];
 
 const PROVIDER_COUNT = new Map(providers.map((provider) => [provider.id, provider.count]));
@@ -81,6 +83,18 @@ export const DEFAULT_PROVIDER_CONFIG: Record<Provider, QuotaProviderConfig> = {
     // Matilda has request-size limits rather than a documented free-tier
     // daily quota. Keep a conservative request guard.
     limits: { rpm: 5 },
+  },
+  zenmux: {
+    scope: "group",
+    timeZone: "UTC",
+    // Unified free tier guard; operators configure real account bounds.
+    limits: { rpm: 20 },
+  },
+  orcarouter: {
+    scope: "group",
+    timeZone: "UTC",
+    // Unified free tier guard; operators configure real account bounds.
+    limits: { rpm: 20 },
   },
 };
 

@@ -1,4 +1,4 @@
-export type Provider = "google" | "nvidia" | "openrouter" | "matilda";
+export type Provider = "google" | "nvidia" | "openrouter" | "matilda" | "zenmux" | "orcarouter";
 export type CapabilityState = "passed" | "failed" | "unknown" | "unsupported";
 export interface ModelProfile {
   id: string; provider: Provider; upstream: string; label: string; context: number | null; maxOutput: number | null;
@@ -44,6 +44,8 @@ const rows: Array<[Provider,string,string,number|null,number|null,CapabilityStat
   ["openrouter","liquid/lfm-2.5-2.6b:free","Liquid LFM 2.5 2.6B",65536,8192,"unknown","unknown","unknown","unknown","unknown","unavailable","Excluded: below the modern coding/general quality threshold."],
   ["openrouter","nvidia/nemotron-3.5-content-safety:free","Nemotron 3.5 Content Safety",128000,8192,"unknown","unknown","unknown","unknown","unknown","unavailable","Excluded: specialized content-safety model."],
   ["matilda","matilda","Matilda (Maincode)",null,null,"passed","unsupported","passed","unsupported","unknown","ready","Gateway-certified locally on 3 November 2026: `/v1/models`, JSON chat, streamed SSE and strict schema all returned 200. Deployed production smoke remains."],
+  ["zenmux","deepseek/deepseek-v4-flash","DeepSeek V4 Flash",1048576,32768,"unknown","unknown","unknown","unknown","fast","experimental","Configured provider path; live credential probe and acceptance pending."],
+  ["orcarouter","orcarouter/free","OrcaRouter Free Router",262144,32768,"unknown","unknown","unknown","unknown","fast","experimental","Configured provider path; live credential probe and acceptance pending."],
 ];
 
 export const MODEL_CATALOG: ModelProfile[] = rows.map(([provider, upstream, label, context, maxOutput, text, tools, schema, vision, latency, status, reason]) => ({
