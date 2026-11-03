@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Activity, Clock3, Database, Gauge, HardDrive, Radio, RefreshCw, ShieldCheck, Zap } from "lucide-react";
+import { Activity, Clock3, Code2, Database, Eye, Gauge, HardDrive, Radio, RefreshCw, ShieldCheck, Zap } from "lucide-react";
+import { MarkdownPreview } from "@/components/markdown-preview";
 
 const MB = 1_000_000;
 const ATLAS_FREE_CAPACITY = 512 * MB;
@@ -131,6 +132,7 @@ export function Playground({ models, onDone }: PlaygroundProps) {
   const [prompt, setPrompt] = useState("Write a small TypeScript function that groups an array of records by a key.");
   const [maxTokens, setMaxTokens] = useState(1024);
   const [answer, setAnswer] = useState("");
+  const [outputMode, setOutputMode] = useState<"raw" | "preview">("raw");
   const [busy, setBusy] = useState(false);
   const [phase, setPhase] = useState("Ready to send");
   const [metrics, setMetrics] = useState<RunMetrics | null>(null);
@@ -207,7 +209,7 @@ export function Playground({ models, onDone }: PlaygroundProps) {
       <div className="run-route"><span>Provider / attempts</span><b>{metrics?.provider || "—"}{metrics?.attempts != null ? ` · ${metrics.attempts} upstream ${metrics.attempts === 1 ? "attempt" : "attempts"}` : ""}</b></div>
       <div className="run-route"><span>Finish reason</span><b>{metrics?.finishReason || "Not available"}</b></div>
       <div className="run-route"><span>Request ID</span><b className="mono">{metrics?.requestId || "Assigned at admission"}</b></div>
-      <div className="answer-panel"><div className="answer-panel-head"><span>STREAMED OUTPUT</span>{busy && <span className="answer-live"><i aria-hidden="true" /> Receiving tokens</span>}</div><pre aria-live="polite" aria-label="Model response">{answer || (busy ? "Waiting for the first model token…" : "The model response will appear here as it streams.")}</pre></div>
+      <div className="answer-panel"><div className="answer-panel-head"><span>STREAMED OUTPUT</span><div className="answer-panel-actions">{busy && <span className="answer-live"><i aria-hidden="true" /> Receiving tokens</span>}<div className="output-mode-switch" role="group" aria-label="Output display mode"><button type="button" aria-label="Raw output" title="Raw output" aria-pressed={outputMode === "raw"} onClick={() => setOutputMode("raw")}><Code2 size={13} aria-hidden="true" /></button><button type="button" aria-label="Preview output" title="Preview output" aria-pressed={outputMode === "preview"} onClick={() => setOutputMode("preview")}><Eye size={13} aria-hidden="true" /></button></div></div></div>{outputMode === "raw" ? <pre aria-live="polite" aria-label="Raw model response">{answer || (busy ? "Waiting for the first model token…" : "The model response will appear here as it streams.")}</pre> : answer ? <MarkdownPreview content={answer} /> : <div className="markdown-empty">{busy ? "Waiting for the first model token…" : "The formatted model response will appear here as it streams."}</div>}</div>
     </aside>
   </div>;
 }
