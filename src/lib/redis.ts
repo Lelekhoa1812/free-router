@@ -31,4 +31,5 @@ export async function beginLoginAttempt(ip:string){
   const script="local per=tonumber(redis.call('GET',KEYS[1]) or '0');local all=tonumber(redis.call('GET',KEYS[2]) or '0');if per>=tonumber(ARGV[1]) or all>=tonumber(ARGV[2]) then return 0 end;per=redis.call('INCR',KEYS[1]);if per==1 then redis.call('EXPIRE',KEYS[1],900) end;all=redis.call('INCR',KEYS[2]);if all==1 then redis.call('EXPIRE',KEYS[2],900) end;return 1";
   return Number(await getRedis().eval(script,[`fr:v1:login:${ip}`,"fr:v1:login:global"],[5,50]))===1;
 }
-export async function clearLoginFailures(ip:string){const r=getRedis();await Promise.all([r.del(`fr:v1:login:${ip}`),r.del("fr:v1:login:global")]);}
+/** Clear the per-source window after a successful sign-in; the shared window expires on its own. */
+export async function clearLoginFailures(ip:string){await getRedis().del(`fr:v1:login:${ip}`);}
