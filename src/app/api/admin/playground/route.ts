@@ -5,6 +5,8 @@ import { ALIASES, MODEL_BY_ID } from "@/lib/models/catalog";
 import { upstreamChat, translateChatRequest } from "@/lib/providers/openai";
 import { checkAdmission, releaseAdmission } from "@/lib/redis";
 import { getDb } from "@/lib/db";
+import { reserveQuota, settleQuota, type QuotaReservation } from "@/lib/quota/ledger";
+import { estimateOutputReserve, estimatePromptTokens, resolveUsage } from "@/lib/quota/estimate";
 import { readJson, sameOrigin } from "@/lib/http";
 
 export const runtime = "nodejs";
@@ -37,6 +39,7 @@ export async function POST(request: Request) {
 
   const candidates = (ALIASES[body.model] || [body.model]).map((id) => MODEL_BY_ID.get(id)).filter((model): model is NonNullable<typeof model> => Boolean(model && model.status === "ready" && model.text === "passed"));
   if (!candidates.length) return jsonError("No eligible model", "model_not_found", 404);
+  const promptTokens = estimatePromptTokens(body.messages, body.tools);
 
   const requestId = `fr_${randomUUID()}`;
   const startedAt = Date.now();
@@ -64,14 +67,22 @@ export async function POST(request: Request) {
             const scopes = ["global", "admin:playground", `provider:${model.provider}:account:${credential.slot}`, `binding:${model.id}:${credential.slot}`];
             const lease = `${requestId}:${credential.slot}`;
             let reserved = false;
+            let quotaReservation: QuotaReservation | undefined;
+            let attemptUsage: any;
+            let attemptText = "";
+            let attemptOutcome: "completed" | "failed" | "cancelled" | "pre_dispatch" = "failed";
             try {
               const admission = await checkAdmission(scopes, lease);
               if (!admission.allowed) { failure = `Admission is busy; retry after ${admission.retryAfter}s.`; continue; }
               reserved = true;
+              const quota = await reserveQuota({ profile: model, slot: credential.slot, estimate: promptTokens + estimateOutputReserve(body, model), attemptId: lease });
+              if (!quota.allowed) { failure = `Quota is exhausted; retry after ${Math.ceil((quota.retryAfterMs ?? 60000) / 1000)}s.`; continue; }
+              quotaReservation = quota.reservation;
               attempts += 1;
               send("status", { message: `Connecting to ${model.label || model.id}`, requestId, resolvedModel: model.id, provider: model.provider, attempt: attempts });
               const upstream = await upstreamChat(model, credential, { ...body, model: model.upstream, stream: true }, aborter.signal);
               if (!upstream.ok || !upstream.body) {
+                attemptOutcome = "pre_dispatch";
                 failure = `Upstream returned HTTP ${upstream.status} for ${model.id}.`;
                 await upstream.body?.cancel().catch(() => undefined);
                 continue;
@@ -122,7 +133,10 @@ export async function POST(request: Request) {
               reserved = false;
 
               if (aborter.signal.aborted || isClosed) break;
+              attemptText = responseText;
+              attemptUsage = usage;
               if (!finishReason) {
+                attemptOutcome = "failed";
                 failure = "The upstream stream ended before a finish reason was received.";
                 const completedAt = Date.now();
                 send("failure", { requestId, message: failure, resolvedModel: model.id, provider: model.provider, durationMs: completedAt - startedAt, attempts });
@@ -130,7 +144,7 @@ export async function POST(request: Request) {
                 controller.close();
                 return;
               }
-              if (!responseText && tools.size === 0) { failure = `The selected route returned no visible text or tool call (${finishReason}).`; continue; }
+              if (!responseText && tools.size === 0) { attemptOutcome = "failed"; failure = `The selected route returned no visible text or tool call (${finishReason}).`; continue; }
 
               const completedAt = Date.now();
               const metrics = {
@@ -146,13 +160,16 @@ export async function POST(request: Request) {
                 toolCalls: [...tools.values()],
               };
               void getDb().then((db) => db.collection("requests").insertOne({ requestId, requestedModel: body.model, model: model.id, provider: model.provider, status: "completed", durationMs: metrics.durationMs, usage, createdAt: new Date(startedAt), expiresAt: new Date(completedAt + 7 * 86_400_000) })).catch(() => undefined);
+              attemptOutcome = "completed";
               send("complete", metrics);
               isClosed = true;
               controller.close();
               return;
             } catch (error) {
+              attemptOutcome = aborter.signal.aborted ? "cancelled" : "failed";
               failure = error instanceof Error ? error.message : "Provider request failed.";
             } finally {
+              if (quotaReservation) { const usage = attemptUsage || attemptText ? resolveUsage(attemptUsage, promptTokens, attemptText) : undefined; await settleQuota(quotaReservation, { outcome: attemptOutcome, usage }).catch(() => undefined); quotaReservation = undefined; }
               if (reserved) await releaseAdmission(scopes, lease).catch(() => undefined);
             }
           }

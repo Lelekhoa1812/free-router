@@ -17,6 +17,8 @@ export interface UpstreamVerdict {
   credential?: "invalid" | "exhausted";
   binding?: "unavailable" | "cooldown";
   overload?: boolean;
+  /** The local quota ledger rejected this attempt; do not relabel it as an upstream 429. */
+  quotaExhausted?: boolean;
 }
 
 export interface UpstreamFailureInput {
