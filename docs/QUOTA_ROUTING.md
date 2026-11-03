@@ -81,7 +81,7 @@ The ledger is intentionally conservative when a process dies before settlement: 
 
 ## Verification
 
-`pnpm test:quota:redis` starts a local `redis-server` and a small Upstash-compatible HTTP fixture, then runs the real reserve/settle Lua against concurrent requests. It covers request-window and token-window contention, idempotent duplicate settlement, and failed-attempt release. The command requires `redis-server` and `redis-cli` on `PATH`; it is intentionally outside `pnpm test` and CI so the normal suite needs no local Redis process. It uses a temporary database and never points at the hosted Upstash instance.
+`pnpm test:quota:redis` starts a temporary local `redis-server` and a small Upstash-compatible HTTP fixture, then runs the real reserve/settle Lua against concurrent requests. It covers request-window and token-window contention, idempotent duplicate settlement, and failed-attempt release. Local runs need `redis-server` and `redis-cli` on `PATH`; set `QUOTA_REDIS_TEST_PORT` to use an existing Redis instead. The normal `pnpm test` excludes this suite, while CI runs it against a Redis 7.2.5 service container. It uses a temporary or isolated database and never points at the hosted Upstash instance.
 
 ## Admin visibility
 

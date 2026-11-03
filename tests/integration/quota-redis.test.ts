@@ -36,7 +36,10 @@ async function snapshot(target: Parameters<typeof ledger.getQuotaSnapshot>[0]) {
 
 beforeAll(async () => {
   for (const key of envKeys) previousEnv[key] = process.env[key];
-  fixture = await startUpstashRedisFixture();
+  const externalPort = process.env.QUOTA_REDIS_TEST_PORT
+    ? Number(process.env.QUOTA_REDIS_TEST_PORT)
+    : undefined;
+  fixture = await startUpstashRedisFixture({ redisPort: externalPort });
   process.env.UPSTASH_REDIS_REST_URL = fixture.url;
   process.env.UPSTASH_REDIS_REST_TOKEN = "local-fixture";
   setConfig({ rpm: 5, rpd: 100, tpm: 100_000, tpd: 1_000_000 });

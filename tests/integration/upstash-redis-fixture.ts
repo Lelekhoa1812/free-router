@@ -23,6 +23,11 @@ export interface UpstashRedisFixture {
   close(): Promise<void>;
 }
 
+export interface UpstashRedisFixtureOptions {
+  /** Use an existing Redis on this port instead of spawning a temporary one. */
+  redisPort?: number;
+}
+
 const READY_TIMEOUT_MS = 10_000;
 
 function sleep(ms: number) {
@@ -46,12 +51,12 @@ async function redisCli(port: number, args: readonly string[]) {
   return execFileAsync("redis-cli", ["-p", String(port), ...args], { maxBuffer: 16 * 1024 * 1024 });
 }
 
-async function waitForRedis(redisPort: number, child: ChildProcess, output: () => string) {
+async function waitForRedis(redisPort: number, child: ChildProcess | undefined, output: () => string) {
   const deadline = Date.now() + READY_TIMEOUT_MS;
   let spawnError: Error | undefined;
   let exited = false;
-  child.once("error", (error) => { spawnError = error; });
-  child.once("exit", () => { exited = true; });
+  child?.once("error", (error) => { spawnError = error; });
+  child?.once("exit", () => { exited = true; });
   let lastError = "";
   while (Date.now() < deadline) {
     if (spawnError) throw new Error(`redis-server could not start: ${spawnError.message}`);
@@ -79,19 +84,25 @@ async function stopChild(child: ChildProcess) {
  * used by the quota ledger. `redis-cli --json` supplies the RESP-to-JSON
  * conversion, so EVAL arrays, MGET nulls and scalar replies keep their types.
  */
-export async function startUpstashRedisFixture(): Promise<UpstashRedisFixture> {
-  const redisPort = await freePort();
-  const directory = await mkdtemp(path.join(tmpdir(), "free-router-quota-redis-"));
-  const child = spawn("redis-server", [
-    "--port", String(redisPort),
-    "--bind", "127.0.0.1",
-    "--save", "",
-    "--appendonly", "no",
-    "--dir", directory,
-  ], { stdio: ["ignore", "pipe", "pipe"] });
+export async function startUpstashRedisFixture(options: UpstashRedisFixtureOptions = {}): Promise<UpstashRedisFixture> {
+  if (options.redisPort !== undefined && (!Number.isInteger(options.redisPort) || options.redisPort < 1 || options.redisPort > 65_535)) {
+    throw new Error(`invalid Redis test port: ${options.redisPort}`);
+  }
+  const externalPort = options.redisPort;
+  const redisPort = externalPort ?? await freePort();
+  const directory = externalPort === undefined ? await mkdtemp(path.join(tmpdir(), "free-router-quota-redis-")) : undefined;
+  const child = externalPort === undefined
+    ? spawn("redis-server", [
+        "--port", String(redisPort),
+        "--bind", "127.0.0.1",
+        "--save", "",
+        "--appendonly", "no",
+        "--dir", directory!,
+      ], { stdio: ["ignore", "pipe", "pipe"] })
+    : undefined;
   let logs = "";
-  child.stdout.on("data", (chunk) => { logs += chunk.toString(); });
-  child.stderr.on("data", (chunk) => { logs += chunk.toString(); });
+  child?.stdout.on("data", (chunk) => { logs += chunk.toString(); });
+  child?.stderr.on("data", (chunk) => { logs += chunk.toString(); });
 
   let server: http.Server | undefined;
   try {
@@ -151,8 +162,8 @@ export async function startUpstashRedisFixture(): Promise<UpstashRedisFixture> {
           if (!server || !server.listening) return resolve();
           server.close(() => resolve());
         });
-        await stopChild(child);
-        await rm(directory, { recursive: true, force: true });
+        if (child) await stopChild(child);
+        if (directory) await rm(directory, { recursive: true, force: true });
       },
     };
   } catch (error) {
@@ -160,8 +171,8 @@ export async function startUpstashRedisFixture(): Promise<UpstashRedisFixture> {
       if (!server || !server.listening) return resolve();
       server.close(() => resolve());
     });
-    await stopChild(child);
-    await rm(directory, { recursive: true, force: true });
+    if (child) await stopChild(child);
+    if (directory) await rm(directory, { recursive: true, force: true });
     throw error;
   }
 }
