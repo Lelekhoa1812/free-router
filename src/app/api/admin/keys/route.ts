@@ -1,7 +1,8 @@
 import { randomBytes } from "node:crypto";
 import { ObjectId } from "mongodb";
-import { getAdminSession } from "@/lib/auth/admin";
+import { getAdminSession, getAdminSessionEmail } from "@/lib/auth/admin";
 import { getDb } from "@/lib/db";
+import { recordAudit } from "@/lib/audit";
 import { hashClientKey } from "@/lib/crypto";
 import { readJson,sameOrigin } from "@/lib/http";
 export const runtime = "nodejs";
@@ -21,6 +22,9 @@ export async function POST(request: Request) {
     if (expiresAt && (!Number.isFinite(expiresAt.getTime()) || expiresAt <= new Date())) return Response.json({ error: "Expiry must be a valid future date" }, { status: 400 });
     const secret = `sk-fr-${randomBytes(32).toString("base64url")}`; const now = new Date(); const id = new ObjectId();
     const doc = { _id: id, name, description, prefix: secret.slice(0, 14), tokenHash: hashClientKey(secret), scopes: [...new Set(scopes)], models: Array.isArray(input.models) ? input.models.map(String).slice(0, 100) : ["*"], status: "active", allowJevRouting: input.allowJevRouting !== false, createdAt: now, lastUsedAt: null, expiresAt };
-    await (await getDb()).collection("client_keys").insertOne(doc); return Response.json({ id: String(id), key: secret, name, prefix: doc.prefix }, { status: 201, headers: { "cache-control": "no-store" } });
+    const db = await getDb();
+    await db.collection("client_keys").insertOne(doc);
+    await recordAudit(db, { action: "client-key-created", actorEmail: (await getAdminSessionEmail()) ?? "shared-password", outcome: "created", targetId: String(id), targetName: name, detail: { scopes: doc.scopes.join(",") } });
+    return Response.json({ id: String(id), key: secret, name, prefix: doc.prefix }, { status: 201, headers: { "cache-control": "no-store" } });
   } catch { return Response.json({ error: "Unable to create key" }, { status: 400 }); }
 }
