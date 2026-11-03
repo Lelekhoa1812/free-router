@@ -23,7 +23,7 @@ This map keeps the implementation reviewable against the FreeRouter product plan
 | Python SDK compatibility | Not implemented | Add pinned Python SDK runner and test matrix |
 | Real quota/concurrency/fault suite | Not implemented | Isolated Redis/Mongo integration gates from product plan remain |
 | Live capability certification | Initial probe snapshot only | Re-run bounded current probes; no capability should be considered newly certified from this table |
-| Vercel deployment | Deployed; targeted current release smoke | Production alias `https://free-router-olive.vercel.app`, deployment from commit `12ed896`; SMTP-backed login, password-only mode with two recipients, Users API, readiness, and 21-model discovery passed. `fr-fast` Chat and Responses streams passed. GLM-5.3-Flash is disabled in this pending release because production gateway probes stalled before upstream headers; full SDK/Cursor certification remains open |
+| Vercel deployment | Deployed; targeted current release smoke | Production alias `https://free-router-olive.vercel.app`, commit `22421f9`; password-only login, Users API, readiness, model removals, and `fr-auto` Chat/Responses SSE passed. Twenty models listed. GLM-5.3-Flash is hidden pending successful gateway-stream certification; full Cursor and broader SDK certification remain open |
 | Cursor acceptance | Not run | Still requires an end-to-end deployed Cursor workflow, including a real agent/tool loop and key revocation check |
 
 ## Immediate release blockers
