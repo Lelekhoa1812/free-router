@@ -26,6 +26,9 @@ return {1,0}`;
 export async function releaseAdmission(scopes:string[],leaseId:string){const redis=getRedis();await Promise.all(coordinationKeys(scopes).map(k=>redis.zrem(k,leaseId)));}
 export async function useDailyBudget(id:string,limit:number){return useDailyBudgets([{id,limit}]);}
 export async function useDailyBudgets(scopes:Array<{id:string;limit:number}>){const redis=getRedis();const day=new Date().toISOString().slice(0,10);const keys=scopes.map(s=>`fr:v1:jev:daily:${day}:${s.id}`);const script="local values={};for i=1,#KEYS do local n=tonumber(redis.call('GET',KEYS[i]) or '0');if n>=tonumber(ARGV[i]) then return 0 end end;for i=1,#KEYS do local n=redis.call('INCR',KEYS[i]);if n==1 then redis.call('EXPIRE',KEYS[i],172800) end end;return 1";return Number(await redis.eval(script,keys,scopes.map(s=>String(s.limit))))===1;}
-export async function loginAllowed(ip:string){const r=getRedis();return Number(await r.get(`fr:v1:login:${ip}`)||0)<5;}
-export async function failedLogin(ip:string){const r=getRedis();const k=`fr:v1:login:${ip}`;const script="local n=redis.call('INCR',KEYS[1]);if n==1 then redis.call('EXPIRE',KEYS[1],900) end;return n";return Number(await r.eval(script,[k],[]));}
-export async function clearLoginFailures(ip:string){await getRedis().del(`fr:v1:login:${ip}`);}
+/** Atomically claim one sign-in attempt against the per-source and shared windows. */
+export async function beginLoginAttempt(ip:string){
+  const script="local per=tonumber(redis.call('GET',KEYS[1]) or '0');local all=tonumber(redis.call('GET',KEYS[2]) or '0');if per>=tonumber(ARGV[1]) or all>=tonumber(ARGV[2]) then return 0 end;per=redis.call('INCR',KEYS[1]);if per==1 then redis.call('EXPIRE',KEYS[1],900) end;all=redis.call('INCR',KEYS[2]);if all==1 then redis.call('EXPIRE',KEYS[2],900) end;return 1";
+  return Number(await getRedis().eval(script,[`fr:v1:login:${ip}`,"fr:v1:login:global"],[5,50]))===1;
+}
+export async function clearLoginFailures(ip:string){const r=getRedis();await Promise.all([r.del(`fr:v1:login:${ip}`),r.del("fr:v1:login:global")]);}

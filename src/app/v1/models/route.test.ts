@@ -31,4 +31,14 @@ describe("GET /v1/models cache policy", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
     await expect(response.json()).resolves.toMatchObject({ data: [{ id: "google/gemini-test" }] });
   });
+
+  it("treats an explicit empty allowlist as deny-all", async () => {
+    mocks.authenticateClient.mockResolvedValue({ key: { models: [] } });
+    mocks.availablePublicModels.mockResolvedValue([{ id: "google/gemini-test" }]);
+
+    const response = await GET(new Request("https://freerouter.test/v1/models"));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ data: [] });
+  });
 });
