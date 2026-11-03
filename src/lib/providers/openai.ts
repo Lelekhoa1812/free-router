@@ -21,7 +21,10 @@ export function listCredentials(provider: ModelProfile["provider"]) { return get
 function buildMatildaBody(profile: ModelProfile, body: CanonicalChat, outputLimit: number | undefined) {
   const filtered: Record<string, unknown> = { model: profile.upstream, messages: body.messages, stream: true };
   if (outputLimit !== undefined) filtered.max_tokens = outputLimit;
-  if ((body.response_format as any)?.type === "json_schema") filtered.response_format = body.response_format;
+  if (["json_object", "json_schema"].includes((body.response_format as any)?.type)) filtered.response_format = body.response_format;
+  if (Array.isArray(body.tools) && body.tools.length) filtered.tools = body.tools;
+  if (body.tool_choice !== undefined) filtered.tool_choice = body.tool_choice;
+  if (body.parallel_tool_calls !== undefined) filtered.parallel_tool_calls = body.parallel_tool_calls;
 
   for (const message of body.messages as any[]) {
     const content = typeof message?.content === "string" ? message.content : JSON.stringify(message?.content ?? "");
@@ -90,11 +93,19 @@ export function completionToSse(completion: any, model: string) {
   }
   const id = typeof completion.id === "string" ? completion.id : `chatcmpl_${Date.now()}`;
   const created = Number.isFinite(completion.created) ? completion.created : Math.floor(Date.now() / 1000);
-  const raw = choice.message?.content ?? choice.delta?.content ?? "";
+  const message = choice.message ?? choice.delta ?? {};
+  const raw = message.content ?? "";
   const content = typeof raw === "string" ? raw : Array.isArray(raw) ? raw.map((part: any) => typeof part?.text === "string" ? part.text : "").join("") : "";
-  const contentChunk = { id, object: "chat.completion.chunk", created, model, choices: [{ index: 0, delta: { role: "assistant", content }, finish_reason: null }] };
-  const finishChunk = { id, object: "chat.completion.chunk", created, model, choices: [{ index: 0, delta: {}, finish_reason: choice.finish_reason || "stop" }] };
-  const events = [`data: ${JSON.stringify(contentChunk)}\n\n`, `data: ${JSON.stringify(finishChunk)}\n\n`];
+  const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
+  const events = [`data: ${JSON.stringify({ id, object: "chat.completion.chunk", created, model, choices: [{ index: 0, delta: { role: "assistant", ...(content ? { content } : {}) }, finish_reason: null }] })}\n\n`];
+  toolCalls.forEach((call: any, index: number) => {
+    events.push(`data: ${JSON.stringify({
+      id, object: "chat.completion.chunk", created, model,
+      choices: [{ index: 0, delta: { tool_calls: [{ index, id: call.id, type: call.type || "function", function: { name: call.function?.name || "", arguments: call.function?.arguments || "" } }] }, finish_reason: null }],
+    })}\n\n`);
+  });
+  const finishReason = choice.finish_reason || (toolCalls.length ? "tool_calls" : "stop");
+  events.push(`data: ${JSON.stringify({ id, object: "chat.completion.chunk", created, model, choices: [{ index: 0, delta: {}, finish_reason: finishReason }] })}\n\n`);
   const usage = normalizeUsage(completion.usage);
   if (usage) events.push(`data: ${JSON.stringify({ id, object: "chat.completion.chunk", created, model, choices: [], usage })}\n\n`);
   events.push("data: [DONE]\n\n");

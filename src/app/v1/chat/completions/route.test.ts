@@ -102,6 +102,60 @@ describe("Chat Completions streaming startup",()=>{
     expect(mocks.upstreamChat).toHaveBeenCalledTimes(1);
   });
 
+  it("routes verified Matilda streamed native tools through the OpenAI contract",async()=>{
+    mocks.getProviderCredentials.mockReturnValue([{provider:"matilda",slot:1,secret:"test-secret",fingerprint:"matilda-fingerprint"}]);
+    mocks.upstreamChat.mockImplementation(async(profile,_credential,body)=>{
+      expect(profile.id).toBe("matilda/matilda");
+      expect(body.tools).toHaveLength(1);
+      expect(body.tool_choice).toBe("required");
+      expect(body.parallel_tool_calls).toBe(false);
+      return new Response([
+        `data: ${JSON.stringify({id:"matilda-tool",model:"matilda",choices:[{index:0,delta:{tool_calls:[{index:0,id:"call_matilda",type:"function",function:{name:"smoke_echo",arguments:'{"value":"FR_TOOL"}'}}]},finish_reason:null}]})}\n\n`,
+        `data: ${JSON.stringify({id:"matilda-tool",model:"matilda",choices:[{index:0,delta:{},finish_reason:"tool_calls"}]})}\n\n`,
+        "data: [DONE]\n\n",
+      ].join(""),{status:200,headers:{"content-type":"text/event-stream"}});
+    });
+    const response=await POST(new Request("https://freerouter.test/v1/chat/completions",{
+      method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({
+        model:"matilda/matilda",
+        messages:[{role:"user",content:"Call smoke_echo with FR_TOOL."}],
+        tools:[{type:"function",function:{name:"smoke_echo",parameters:{type:"object",properties:{value:{type:"string"}},required:["value"],additionalProperties:false}}}],
+        tool_choice:"required",parallel_tool_calls:false,stream:true,
+      }),
+    }));
+    const reader=response.body!.getReader();let output="";
+    while(true){const item=await reader.read();if(item.done)break;output+=new TextDecoder().decode(item.value);}
+    expect(response.status).toBe(200);
+    expect(output).toContain('"name":"smoke_echo"');
+    expect(output).toContain('"finish_reason":"tool_calls"');
+    expect(output).toContain("data: [DONE]");
+    expect(mocks.upstreamChat).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows Matilda JSON mode through the OpenAI Chat route",async()=>{
+    mocks.getProviderCredentials.mockReturnValue([{provider:"matilda",slot:1,secret:"test-secret",fingerprint:"matilda-fingerprint"}]);
+    mocks.upstreamChat.mockImplementation(async(_profile,_credential,body)=>{
+      expect(body.response_format).toEqual({type:"json_object"});
+      return new Response([
+        `data: ${JSON.stringify({choices:[{index:0,delta:{content:'{"ok":true}'},finish_reason:null}]})}\n\n`,
+        `data: ${JSON.stringify({choices:[{index:0,delta:{},finish_reason:"stop"}]})}\n\n`,
+        "data: [DONE]\n\n",
+      ].join(""),{status:200,headers:{"content-type":"text/event-stream"}});
+    });
+    const response=await POST(new Request("https://freerouter.test/v1/chat/completions",{
+      method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({model:"matilda/matilda",messages:[{role:"user",content:"Return JSON."}],response_format:{type:"json_object"},stream:true}),
+    }));
+    const reader=response.body!.getReader();let output="";
+    while(true){const item=await reader.read();if(item.done)break;output+=new TextDecoder().decode(item.value);}
+    expect(response.status).toBe(200);
+    const event=output.split(/\r?\n/).find((line)=>line.startsWith("data: {"));
+    expect(JSON.parse(event!.slice(6)).choices[0].delta.content).toBe('{"ok":true}');
+    expect(output).toContain("data: [DONE]");
+    expect(mocks.upstreamChat).toHaveBeenCalledTimes(1);
+  });
+
   it("uses the outer Responses permission for a trusted adapter request",async()=>{
     mocks.consumeInternalClient.mockReturnValueOnce({_id:"responses-only-client",allowJevRouting:false});
     mocks.upstreamChat.mockResolvedValue(new Response([
