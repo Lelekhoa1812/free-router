@@ -213,15 +213,22 @@ function mergeProviderConfig(
   return merged;
 }
 
+function resolveModeOverride(modeOverride?: string): QuotaMode | undefined {
+  if (!modeOverride) return undefined;
+  const parsed = configSchema.shape.mode.safeParse(modeOverride);
+  return parsed.success ? parsed.data : undefined;
+}
+
 /**
  * Parse a quota config object. Invalid configuration returns conservative
- * defaults plus a warning instead of enforcing a half-valid policy.
+ * defaults plus a warning instead of enforcing a half-valid policy. A valid
+ * mode override survives an invalid payload so enforce still fails closed.
  */
 export function parseQuotaConfig(raw: unknown, modeOverride?: string): QuotaConfigResult {
   const parsed = configSchema.safeParse(raw);
   if (!parsed.success) {
     return {
-      config: { mode: "observe", groups: defaultGroups(), providers: defaultProviderConfig() },
+      config: { mode: resolveModeOverride(modeOverride) ?? "observe", groups: defaultGroups(), providers: defaultProviderConfig() },
       warnings: ["quota_config_invalid"],
       valid: false,
     };
@@ -229,9 +236,9 @@ export function parseQuotaConfig(raw: unknown, modeOverride?: string): QuotaConf
   try {
     const providers = mergeProviderConfig(defaultProviderConfig(), parsed.data.providers);
     const groups = normalizeGroups(parsed.data.groups);
-    const mode = modeOverride ? configSchema.shape.mode.safeParse(modeOverride) : null;
-    const modeValue: QuotaMode = mode?.success && mode.data ? mode.data : (parsed.data.mode ?? "observe");
-    const warnings = modeOverride && !mode?.success ? [`quota_mode_invalid:${modeOverride}`] : [];
+    const override = resolveModeOverride(modeOverride);
+    const modeValue: QuotaMode = override ?? parsed.data.mode ?? "observe";
+    const warnings = modeOverride && !override ? [`quota_mode_invalid:${modeOverride}`] : [];
     return {
       config: { mode: modeValue, groups, providers },
       warnings,
@@ -239,7 +246,7 @@ export function parseQuotaConfig(raw: unknown, modeOverride?: string): QuotaConf
     };
   } catch (error) {
     return {
-      config: { mode: "observe", groups: defaultGroups(), providers: defaultProviderConfig() },
+      config: { mode: resolveModeOverride(modeOverride) ?? "observe", groups: defaultGroups(), providers: defaultProviderConfig() },
       warnings: [`quota_config_invalid:${error instanceof Error ? error.message : "unknown"}`],
       valid: false,
     };
@@ -258,7 +265,7 @@ export function loadQuotaConfig(): QuotaConfigResult {
     return parseQuotaConfig(JSON.parse(text), mode || undefined);
   } catch {
     return {
-      config: { mode: "observe", groups: defaultGroups(), providers: defaultProviderConfig() },
+      config: { mode: resolveModeOverride(mode) ?? "observe", groups: defaultGroups(), providers: defaultProviderConfig() },
       warnings: ["quota_config_invalid_json"],
       valid: false,
     };

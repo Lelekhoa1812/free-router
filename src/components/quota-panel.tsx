@@ -46,11 +46,11 @@ interface QuotaData {
 }
 
 function value(value: number | undefined): string {
-  return value === undefined ? "Not set" : value.toLocaleString();
+  return value === undefined || value === 0 ? "Not set" : value.toLocaleString();
 }
 
 function remaining(value: number | null, limit: number | undefined): string {
-  if (limit === undefined) return "Observed only";
+  if (!limit) return "Observed only";
   if (value === null) return "—";
   return value.toLocaleString();
 }
@@ -165,7 +165,7 @@ export function QuotaPanel() {
                         <td>{value(row.limits.rpd)}</td>
                         <td>{row.snapshot.used.requestsDay.toLocaleString()}</td>
                         <td>{remaining(row.snapshot.remaining.requestsDay, row.limits.rpd)}</td>
-                        <td>{row.limits.tpd === undefined ? "Observed only" : `${row.snapshot.used.tokensDay.toLocaleString()} / ${row.limits.tpd.toLocaleString()}`}</td>
+                        <td>{!row.limits.tpd ? "Observed only" : `${row.snapshot.used.tokensDay.toLocaleString()} / ${row.limits.tpd.toLocaleString()}`}</td>
                         <td>{reset(row.snapshot.resetAt)}</td>
                       </tr>
                     ))}

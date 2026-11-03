@@ -43,4 +43,13 @@ describe("quota estimates", () => {
     expect(estimated.output).toBeGreaterThan(0);
     expect(estimatedUsage(10, "abc").total).toBeGreaterThan(10);
   });
+
+  it("includes tool-call arguments in the fallback output estimate", () => {
+    const tools = [{ id: "call_1", type: "function", function: { name: "lookup", arguments: JSON.stringify({ query: "a long tool argument payload" }) } }];
+    const withoutTools = resolveUsage(null, 100, "hello");
+    const withTools = resolveUsage(null, 100, "hello", tools);
+    expect(withTools.source).toBe("estimated");
+    expect(withTools.output).toBeGreaterThan(withoutTools.output);
+    expect(withTools.total).toBeGreaterThan(withoutTools.total);
+  });
 });

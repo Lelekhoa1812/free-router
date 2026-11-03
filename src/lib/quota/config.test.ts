@@ -78,4 +78,19 @@ describe("quota configuration", () => {
     expect(result.warnings).toContain("quota_config_invalid_json");
     expect(result.config.mode).toBe("observe");
   });
+
+  it("keeps enforce selected when the JSON is malformed", () => {
+    process.env.QUOTA_CONFIG_JSON = "{not-json";
+    process.env.QUOTA_MODE = "enforce";
+    const result = loadQuotaConfig();
+    expect(result.valid).toBe(false);
+    expect(result.config.mode).toBe("enforce");
+  });
+
+  it("keeps enforce selected when the config shape is invalid", () => {
+    process.env.QUOTA_MODE = "enforce";
+    const result = parseQuotaConfig({ providers: { google: { timeZone: "Mars/Olympus" } } }, "enforce");
+    expect(result.valid).toBe(false);
+    expect(result.config.mode).toBe("enforce");
+  });
 });

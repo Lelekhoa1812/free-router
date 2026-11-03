@@ -130,6 +130,18 @@ describe("Chat Completions streaming startup",()=>{
     expect(mocks.releaseAdmission).toHaveBeenCalledTimes(1);
   });
 
+  it("releases admission when quota reservation fails before dispatch",async()=>{
+    mocks.reserveQuota.mockRejectedValue(new Error("quota ledger unavailable"));
+    const response=await POST(new Request("https://freerouter.test/v1/chat/completions",{
+      method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({model:"google/gemini-3.6-flash",messages:[{role:"user",content:"Reply briefly"}],stream:true}),
+    }));
+    await response.text();
+    expect(response.headers.get("content-type")).toContain("text/event-stream");
+    expect(mocks.upstreamChat).not.toHaveBeenCalled();
+    expect(mocks.releaseAdmission).toHaveBeenCalledTimes(1);
+  });
+
   it("streams a quota error frame when the local ledger denies before dispatch",async()=>{
     mocks.reserveQuota.mockResolvedValue({allowed:false,reason:"request_minute",retryAfterMs:30_000});
     const response=await POST(new Request("https://freerouter.test/v1/chat/completions",{

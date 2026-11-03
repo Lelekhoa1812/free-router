@@ -18,10 +18,12 @@ import {
 const profile = MODEL_BY_ID.get("google/gemini-3.6-flash")!;
 const redis = { eval: vi.fn(), mget: vi.fn() };
 let previousMode: string | undefined;
+let previousConfig: string | undefined;
 
 beforeEach(() => {
   vi.clearAllMocks();
   previousMode = process.env.QUOTA_MODE;
+  previousConfig = process.env.QUOTA_CONFIG_JSON;
   process.env.QUOTA_MODE = "enforce";
   mocks.getRedis.mockReturnValue(redis);
 });
@@ -29,6 +31,8 @@ beforeEach(() => {
 afterEach(() => {
   if (previousMode === undefined) delete process.env.QUOTA_MODE;
   else process.env.QUOTA_MODE = previousMode;
+  if (previousConfig === undefined) delete process.env.QUOTA_CONFIG_JSON;
+  else process.env.QUOTA_CONFIG_JSON = previousConfig;
 });
 
 describe("quota ledger", () => {
@@ -71,6 +75,12 @@ describe("quota ledger", () => {
   it("fails closed in enforce mode when Redis is unavailable", async () => {
     redis.eval.mockRejectedValue(new Error("redis down"));
     await expect(reserveQuota({ profile, slot: 1, estimate: 100, attemptId: "fr_test:5" })).rejects.toThrow("redis down");
+  });
+
+  it("fails closed in enforce mode when the config is invalid", async () => {
+    process.env.QUOTA_CONFIG_JSON = "{not-json";
+    await expect(reserveQuota({ profile, slot: 1, estimate: 100, attemptId: "fr_test:5b" })).rejects.toThrow("quota_config_invalid");
+    expect(redis.eval).not.toHaveBeenCalled();
   });
 
   it("settles an attempt once and adjusts the token reservation", async () => {

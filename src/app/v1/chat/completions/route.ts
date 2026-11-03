@@ -77,6 +77,7 @@ function streamChatResponse(args:{request:Request;rid:string;input:CanonicalChat
   let activeQuota:QuotaReservation|undefined;
   let attemptUsage:any;
   let attemptContent="";
+  let attemptTools:any;
   let attemptOutcome:"completed"|"failed"|"cancelled"|"pre_dispatch"="failed";
   const onRequestAbort=()=>aborter.abort(request.signal.reason);
   request.signal.addEventListener("abort",onRequestAbort,{once:true});
@@ -114,10 +115,11 @@ function streamChatResponse(args:{request:Request;rid:string;input:CanonicalChat
                 if(binding?.status==="unavailable"||(binding?.cooldownUntil&&new Date(binding.cooldownUntil)>new Date())||((input.response_format as any)?.type==="json_schema"&&binding?.schemaStatus==="failed")||(input.tools as any[]|undefined)?.some(t=>t.function?.strict===true&&binding?.schemaStatus==="failed"))continue;
                 const admission=await checkAdmission(scopes,lease);
                 if(!admission.allowed){failures.push(verdictFor(429,"429:admission_denied"));continue;}
+                activeScopes=scopes;activeLease=lease;
                 const quota=await reserveQuota({profile,slot:credential.slot,estimate:promptTokens+estimateOutputReserve(input,profile),attemptId:lease});
-                if(!quota.allowed){failures.push(quotaVerdict(quota.reason,quota.retryAfterMs));await releaseAdmission(scopes,lease);continue;}
-                activeQuota=quota.reservation;attemptUsage=undefined;attemptContent="";attemptOutcome="failed";
-                activeScopes=scopes;activeLease=lease;dispatched++;
+                if(!quota.allowed){failures.push(quotaVerdict(quota.reason,quota.retryAfterMs));await releaseAdmission(scopes,lease);activeScopes=undefined;activeLease=undefined;continue;}
+                activeQuota=quota.reservation;attemptUsage=undefined;attemptContent="";attemptTools=undefined;attemptOutcome="failed";
+                dispatched++;
                 const attemptIndex=dispatched-1;
                 await db.collection<any>("requests").updateOne({requestId:rid},{$push:{attempts:{model:profile.id,provider:profile.provider,credentialSlot:credential.slot,status:"dispatched",startedAt:new Date()}},$set:{status:"connecting",model:profile.id,provider:profile.provider,credentialSlot:credential.slot}} as any);
                 const body=providerRequestBody(profile,input,alias);
@@ -179,7 +181,7 @@ function streamChatResponse(args:{request:Request;rid:string;input:CanonicalChat
                   if(doneSent)break;
                 }
                 buffer+=decoder.decode();if(buffer.trim())parseEvent(buffer);
-                const assembledTools=[...toolCalls.values()];
+                const assembledTools=[...toolCalls.values()];attemptTools=assembledTools;
                 const invalid=strict?validateGenerated(input,content,assembledTools):null;
                 if(invalid){
                   attemptOutcome="failed";
@@ -210,7 +212,7 @@ function streamChatResponse(args:{request:Request;rid:string;input:CanonicalChat
                 await db.collection("requests").updateOne({requestId:rid},{$set:{status:"retrying",[`attempts.${dispatched-1}.status`]:"failed",[`attempts.${dispatched-1}.failure`]:reason}}).catch(()=>undefined);
               }finally{
                 if(activeReader){await activeReader.cancel().catch(()=>undefined);activeReader=undefined;}
-                if(activeQuota){const usage=attemptUsage||attemptContent?resolveUsage(attemptUsage,promptTokens,attemptContent):undefined;await settleQuota(activeQuota,{outcome:attemptOutcome,usage}).catch(()=>undefined);activeQuota=undefined;}
+                if(activeQuota){const usage=attemptUsage||attemptContent?resolveUsage(attemptUsage,promptTokens,attemptContent,attemptTools):undefined;await settleQuota(activeQuota,{outcome:attemptOutcome,usage}).catch(()=>undefined);activeQuota=undefined;}
                 if(activeScopes&&activeLease){await releaseAdmission(activeScopes,activeLease).catch(()=>undefined);activeScopes=undefined;activeLease=undefined;}
               }
               if(!alias)break;
@@ -230,7 +232,7 @@ function streamChatResponse(args:{request:Request;rid:string;input:CanonicalChat
         }finally{close();}
       })();
     },
-    async cancel(){cancelled=true;aborter.abort(new Error("client_disconnected"));if(heartbeat)clearInterval(heartbeat);if(deadline)clearTimeout(deadline);request.signal.removeEventListener("abort",onRequestAbort);await activeReader?.cancel().catch(()=>undefined);if(activeQuota){const usage=attemptUsage||attemptContent?resolveUsage(attemptUsage,promptTokens,attemptContent):undefined;await settleQuota(activeQuota,{outcome:"cancelled",usage}).catch(()=>undefined);activeQuota=undefined;}if(activeScopes&&activeLease)await releaseAdmission(activeScopes,activeLease).catch(()=>undefined);},
+    async cancel(){cancelled=true;aborter.abort(new Error("client_disconnected"));if(heartbeat)clearInterval(heartbeat);if(deadline)clearTimeout(deadline);request.signal.removeEventListener("abort",onRequestAbort);await activeReader?.cancel().catch(()=>undefined);if(activeQuota){const usage=attemptUsage||attemptContent?resolveUsage(attemptUsage,promptTokens,attemptContent,attemptTools):undefined;await settleQuota(activeQuota,{outcome:"cancelled",usage}).catch(()=>undefined);activeQuota=undefined;}if(activeScopes&&activeLease)await releaseAdmission(activeScopes,activeLease).catch(()=>undefined);},
   });
   return new Response(stream,{headers});
 }
@@ -271,6 +273,7 @@ export async function POST(request: Request) {
       let quotaReservation: QuotaReservation | undefined;
       let attemptUsage: any;
       let attemptContent = "";
+      let attemptTools: any;
       let attemptOutcome: "completed" | "failed" | "cancelled" | "pre_dispatch" = "failed";
       try {
         const health=await db.collection<any>("credential_health").findOne({provider:profile.provider,fingerprint:credential.fingerprint});if(health&&(health.paused===true||health.authStatus==="invalid"||(health.cooldownUntil&&new Date(health.cooldownUntil)>new Date())))continue;
@@ -306,7 +309,7 @@ export async function POST(request: Request) {
         const toolCalls = new Map<number, any>();
         for (const event of normalized as any[]) for (const call of event.choices?.[0]?.delta?.tool_calls || []) { const prior = toolCalls.get(call.index) || { id: call.id, type: "function", function: { name: "", arguments: "" } }; if (call.id) prior.id = call.id; if (call.function?.name) prior.function.name += call.function.name; if (call.function?.arguments) prior.function.arguments += call.function.arguments; toolCalls.set(call.index, prior); }
         await releaseAdmission(scopes, lease); await db?.collection("requests").updateOne({ requestId: rid }, { $set: { status: "completed", completedAt: new Date() } });
-        const finish=(normalized as any[]).map(e=>e?.choices?.[0]?.finish_reason).filter(Boolean).at(-1);const usage=(normalized as any[]).map(e=>e?.usage).filter(Boolean).at(-1);const toolList=[...toolCalls.values()];const invalid=validateGenerated(input,content,toolList);
+        const finish=(normalized as any[]).map(e=>e?.choices?.[0]?.finish_reason).filter(Boolean).at(-1);const usage=(normalized as any[]).map(e=>e?.usage).filter(Boolean).at(-1);const toolList=[...toolCalls.values()];attemptTools=toolList;const invalid=validateGenerated(input,content,toolList);
         attemptUsage=usage;attemptContent=content;
         if(invalid){attemptOutcome="failed";failures.push(verdictFor(200,invalid));await db.collection("model_bindings").updateOne({provider:profile.provider,model:profile.upstream,fingerprint:credential.fingerprint},{$set:{schemaStatus:"failed",schemaFailure:invalid,checkedAt:new Date()}},{upsert:true});continue;}
         if((input.response_format as any)?.type==="json_schema"||(input.tools as any[]|undefined)?.some(t=>t.function?.strict===true))await db.collection("model_bindings").updateOne({provider:profile.provider,model:profile.upstream,fingerprint:credential.fingerprint},{$set:{schemaStatus:"passed",schemaCheckedAt:new Date()},$unset:{schemaFailure:""}},{upsert:true});
@@ -316,7 +319,7 @@ export async function POST(request: Request) {
       } catch (e) { attemptOutcome=request.signal.aborted?"cancelled":"failed"; if (admitted) await releaseAdmission(scopes, lease).catch(() => undefined); failures.push(verdictFor(null,e instanceof Error ? e.name : "error")); }
       finally {
         if (admitted) { await releaseAdmission(scopes, lease).catch(() => undefined); admitted = false; }
-        if (quotaReservation) { const usage=attemptUsage||attemptContent?resolveUsage(attemptUsage,promptTokens,attemptContent):undefined; await settleQuota(quotaReservation,{outcome:attemptOutcome,usage}).catch(() => undefined); quotaReservation=undefined; }
+        if (quotaReservation) { const usage=attemptUsage||attemptContent?resolveUsage(attemptUsage,promptTokens,attemptContent,attemptTools):undefined; await settleQuota(quotaReservation,{outcome:attemptOutcome,usage}).catch(()=>undefined); quotaReservation=undefined; }
       }
     }
     if (!alias||dispatched>=3) break;
