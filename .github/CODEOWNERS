@@ -1,0 +1,36 @@
+# Review requests follow these paths automatically.
+# The last matching pattern wins. Keep this file and MAINTAINERS.md in sync.
+
+# Default reviewers for anything not listed below.
+* @Lelekhoa1812 @kinqsradio
+
+# API contracts, Decisions and Jev
+/src/app/v1/ @Lelekhoa1812 @kinqsradio
+/src/lib/jev.ts @Lelekhoa1812 @kinqsradio
+/src/lib/models/ @Lelekhoa1812 @kinqsradio
+/src/lib/validation.ts @Lelekhoa1812 @kinqsradio
+/src/lib/failures.ts @Lelekhoa1812 @kinqsradio
+
+# Auth, client keys and admin surface
+/src/lib/auth/ @Lelekhoa1812 @kinqsradio
+/src/app/api/ @Lelekhoa1812 @kinqsradio
+/src/lib/audit.ts @Lelekhoa1812 @kinqsradio
+
+# Providers, storage and admission
+/src/lib/providers/ @Lelekhoa1812 @kinqsradio
+/src/lib/db.ts @Lelekhoa1812 @kinqsradio
+/src/lib/redis.ts @Lelekhoa1812 @kinqsradio
+
+# Dashboard and setup
+/src/components/ @Lelekhoa1812 @kinqsradio
+/src/app/setup/ @Lelekhoa1812 @kinqsradio
+/src/app/page.tsx @Lelekhoa1812 @kinqsradio
+
+# Docs, workflows and build configuration
+/docs/ @Lelekhoa1812 @kinqsradio
+/.github/ @Lelekhoa1812 @kinqsradio
+/CONTRIBUTING.md @Lelekhoa1812 @kinqsradio
+/MAINTAINERS.md @Lelekhoa1812 @kinqsradio
+/package.json @Lelekhoa1812 @kinqsradio
+/pnpm-lock.yaml @Lelekhoa1812 @kinqsradio
+/next.config.ts @Lelekhoa1812 @kinqsradio

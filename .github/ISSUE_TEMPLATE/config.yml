@@ -1,5 +1,11 @@
 blank_issues_enabled: true
 contact_links:
+  - name: Contribution rules
+    url: https://github.com/Lelekhoa1812/free-router/blob/main/CONTRIBUTING.md
+    about: Branch, issue and pull request naming, labels and the review queue.
+  - name: Maintainers and area ownership
+    url: https://github.com/Lelekhoa1812/free-router/blob/main/MAINTAINERS.md
+    about: Who reviews which area, and how ownership changes.
   - name: Setup, deployment and provider credentials
     url: https://github.com/Lelekhoa1812/free-router/blob/main/docs/OPERATIONS.md
     about: How the service is laid out, what it needs to run, and how to verify a deployment.

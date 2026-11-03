@@ -1,0 +1,144 @@
+name: PR triage
+
+# pull_request_target gives fork pull requests a writable token for labels.
+# This workflow never checks out or executes pull-request code; it only reads
+# event metadata and calls the GitHub API.
+on:
+  pull_request_target:
+    types: [opened, edited, reopened, synchronize, ready_for_review, converted_to_draft]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: pr-triage-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  title:
+    name: Title format
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate title format
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+          types='feat|fix|docs|test|refactor|chore|perf|ci|build|revert'
+          if [[ ! "$TITLE" =~ ^($types)(\([a-z0-9][a-z0-9-]*\))?\!?:\ .+ ]]; then
+            echo "::error::PR title must be '<type>(<scope>): <summary>', for example 'fix(decisions): accept unnamed questions'."
+            exit 1
+          fi
+          if [[ "$TITLE" == *. ]]; then
+            echo "::error::PR title must not end with a period."
+            exit 1
+          fi
+          if (( ${#TITLE} > 72 )); then
+            echo "::error::PR title is ${#TITLE} characters; the limit is 72."
+            exit 1
+          fi
+          echo "Title is valid: $TITLE"
+
+  labels:
+    name: Type, area and size
+    runs-on: ubuntu-latest
+    steps:
+      - name: Apply labels
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          TITLE: ${{ github.event.pull_request.title }}
+          ACTION: ${{ github.event.action }}
+          DRAFT: ${{ github.event.pull_request.draft }}
+          ADDITIONS: ${{ github.event.pull_request.additions }}
+          DELETIONS: ${{ github.event.pull_request.deletions }}
+        run: |
+          set -euo pipefail
+
+          add() { gh pr edit "$NUMBER" --repo "$REPO" --add-label "$1" >/dev/null; }
+          remove() { gh pr edit "$NUMBER" --repo "$REPO" --remove-label "$1" >/dev/null 2>&1 || true; }
+
+          # Rebuild generated labels so a rebased or narrowed diff does not keep stale areas.
+          while IFS= read -r label; do
+            case "$label" in
+              "type: "*|"area: "*|"size: "*) remove "$label" ;;
+            esac
+          done < <(gh pr view "$NUMBER" --repo "$REPO" --json labels --jq '.labels[].name')
+
+          if [[ "$TITLE" =~ ^(feat|fix|docs|test|refactor|chore|perf|ci|build|revert)(\(([a-z0-9][a-z0-9-]*)\))?\!?:\  ]]; then
+            type="${BASH_REMATCH[1]}"
+            scope="${BASH_REMATCH[3]:-}"
+            case "$type" in
+              feat) add "type: feature" ;;
+              fix) add "type: bug" ;;
+              docs) add "type: docs" ;;
+              test) add "type: test" ;;
+              refactor) add "type: refactor" ;;
+              perf) add "type: performance" ;;
+              ci|build) add "type: ci" ;;
+              chore|revert) add "type: chore" ;;
+            esac
+            case "$scope" in
+              decisions|chat|responses|models|auth|providers|storage|dashboard|docs|ci) add "area: $scope" ;;
+            esac
+          fi
+
+          declare -A areas=()
+          while IFS= read -r file; do
+            [[ -z "$file" ]] && continue
+            case "$file" in
+              src/lib/jev*|src/app/v1/decisions/*|src/app/v1/systemone/*) areas["area: decisions"]=1 ;;
+              src/app/v1/chat/*) areas["area: chat"]=1 ;;
+              src/app/v1/responses/*) areas["area: responses"]=1 ;;
+              src/app/v1/models/*|src/lib/models/*) areas["area: models"]=1 ;;
+              src/lib/auth/*|src/app/api/auth/*|src/app/api/admin/*) areas["area: auth"]=1 ;;
+              src/lib/providers/*) areas["area: providers"]=1 ;;
+              src/lib/db*|src/lib/redis*|src/lib/mongo*) areas["area: storage"]=1 ;;
+              src/components/*|src/app/page.tsx|src/app/setup/*) areas["area: dashboard"]=1 ;;
+              docs/*|README.md|CONTRIBUTING.md) areas["area: docs"]=1 ;;
+              .github/*|package.json|pnpm-lock.yaml|tsconfig*.json|next.config.*) areas["area: ci"]=1 ;;
+            esac
+          done < <(gh api --paginate "repos/$REPO/pulls/$NUMBER/files" --jq '.[].filename')
+          for area in "${!areas[@]}"; do add "$area"; done
+
+          total=$(( ${ADDITIONS:-0} + ${DELETIONS:-0} ))
+          if (( total < 100 )); then
+            add "size: small"
+          elif (( total < 500 )); then
+            add "size: medium"
+          else
+            add "size: large"
+          fi
+
+          case "$ACTION" in
+            opened)
+              if [[ "$DRAFT" == "true" ]]; then
+                add "status: draft"
+              else
+                add "status: ci-running"
+              fi
+              ;;
+            synchronize)
+              remove "ci: passed"
+              remove "ci: failed"
+              remove "status: needs-review"
+              remove "status: approved"
+              remove "status: changes-requested"
+              add "status: ci-running"
+              ;;
+            converted_to_draft)
+              remove "status: needs-review"
+              add "status: draft"
+              ;;
+            reopened|ready_for_review)
+              remove "status: draft"
+              current=$(gh pr view "$NUMBER" --repo "$REPO" --json labels --jq '.labels[].name')
+              if grep -qx 'ci: passed' <<< "$current"; then
+                add "status: needs-review"
+              elif ! grep -qx 'ci: failed' <<< "$current"; then
+                add "status: ci-running"
+              fi
+              ;;
+          esac
