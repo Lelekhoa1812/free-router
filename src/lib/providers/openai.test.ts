@@ -17,15 +17,15 @@ describe("Matilda (Maincode) provider compatibility",()=>{
     expect(matilda.tools).toBe("unsupported");
     expect(matilda.vision).toBe("unsupported");
   });
-  it("sends only the fields Maincode accepts and disables upstream streaming",()=>{
+  it("sends only the fields Maincode accepts and keeps upstream streaming enabled",()=>{
     const body=buildProviderChatBody(matilda,{model:matilda.id,messages:[{role:"user",content:"hi"}],temperature:0.2,top_p:0.9,stop:["x"],tools:[{type:"function",function:{name:"f",parameters:{}}}],tool_choice:"auto",parallel_tool_calls:true,reasoning_effort:"high",stream_options:{include_usage:true},user:"u",max_completion_tokens:64,response_format:{type:"json_schema",json_schema:{name:"x",schema:{type:"object"}}}});
-    expect(body).toEqual({model:"matilda",messages:[{role:"user",content:"hi"}],stream:false,max_tokens:64,response_format:{type:"json_schema",json_schema:{name:"x",schema:{type:"object"}}}});
+    expect(body).toEqual({model:"matilda",messages:[{role:"user",content:"hi"}],stream:true,max_tokens:64,response_format:{type:"json_schema",json_schema:{name:"x",schema:{type:"object"}}}});
   });
   it("enforces Maincode's per-message and per-request limits",()=>{
     expect(()=>buildProviderChatBody(matilda,{model:matilda.id,messages:[{role:"user",content:"x".repeat(16001)}]})).toThrow(/16,000/);
     expect(()=>buildProviderChatBody(matilda,{model:matilda.id,messages:Array.from({length:5},()=>({role:"user",content:"x".repeat(14000)}))})).toThrow(/65,536/);
   });
-  it("converts a non-streaming completion into OpenAI chat SSE",async()=>{
+  it("converts a JSON completion fallback into OpenAI chat SSE",async()=>{
     const response=completionToSse({id:"cmpl_1",created:1,model:"matilda",choices:[{message:{content:"ok"},finish_reason:"stop"}],usage:{prompt_tokens:3,completion_tokens:1,total_tokens:4}},"matilda");
     expect(response.headers.get("content-type")).toContain("text/event-stream");
     const events=(await response.text()).trim().split("\n\n");

@@ -19,7 +19,7 @@ export function resolveProfile(model: string): ModelProfile | undefined {
 export function listCredentials(provider: ModelProfile["provider"]) { return getProviderCredentials().filter((c) => c.provider === provider); }
 
 function buildMatildaBody(profile: ModelProfile, body: CanonicalChat, outputLimit: number | undefined) {
-  const filtered: Record<string, unknown> = { model: profile.upstream, messages: body.messages, stream: false };
+  const filtered: Record<string, unknown> = { model: profile.upstream, messages: body.messages, stream: true };
   if (outputLimit !== undefined) filtered.max_tokens = outputLimit;
   if ((body.response_format as any)?.type === "json_schema") filtered.response_format = body.response_format;
 
@@ -56,7 +56,7 @@ export async function upstreamChat(profile: ModelProfile, credential: ReturnType
   const url = `${config.baseUrl}/chat/completions`;
   const upstreamBody = buildProviderChatBody(profile, body);
   const matilda = profile.provider === "matilda";
-  const headers: Record<string, string> = { authorization: `Bearer ${credential.secret}`, "content-type": "application/json", accept: matilda ? "application/json" : "text/event-stream" };
+  const headers: Record<string, string> = { authorization: `Bearer ${credential.secret}`, "content-type": "application/json", accept: matilda ? "text/event-stream, application/json" : "text/event-stream" };
   if (profile.provider === "openrouter") { headers["HTTP-Referer"] = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://freerouter.local"; headers["X-Title"] = "FreeRouter"; }
   const response = await fetch(url, { method: "POST", headers, body: JSON.stringify(upstreamBody), signal, cache: "no-store" });
   if (matilda && response.ok) {

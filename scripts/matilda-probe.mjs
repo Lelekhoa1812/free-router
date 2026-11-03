@@ -10,52 +10,132 @@ if (!key) {
 }
 
 const headers = { authorization: `Bearer ${key}` };
-const started = Date.now();
+const failures = [];
 
-let modelsResponse;
-try {
-  modelsResponse = await fetch(`${base}/models`, { headers, signal: AbortSignal.timeout(15000) });
-} catch (error) {
-  console.error('Matilda model discovery failed:', error?.name || 'network error');
-  process.exit(1);
+function report(name, ok, detail) {
+  console.log(`${name}: ${ok ? 'pass' : 'fail'}${detail ? ` (${detail})` : ''}`);
+  if (!ok) failures.push(name);
 }
-const modelsText = await modelsResponse.text();
-let modelIds = [];
-try {
-  const parsed = JSON.parse(modelsText);
-  const list = Array.isArray(parsed) ? parsed : parsed.data || parsed.models || [];
-  modelIds = list.map((model) => model?.id || model?.name).filter(Boolean);
-} catch {}
-console.log(`Models: HTTP ${modelsResponse.status}; ids=${modelIds.length ? modelIds.join(', ') : 'unavailable'}`);
-if (!modelsResponse.ok) process.exit(1);
 
-let chatResponse;
-try {
-  chatResponse = await fetch(`${base}/chat/completions`, {
-    method: 'POST',
-    headers: { ...headers, 'content-type': 'application/json' },
-    body: JSON.stringify({
-      model: modelIds[0] || 'matilda',
-      messages: [{ role: 'user', content: 'Reply with the single word ok.' }],
-      max_tokens: 16,
-      stream: false,
-    }),
+async function request(path, options = {}) {
+  const response = await fetch(`${base}${path}`, {
+    ...options,
+    headers: { ...headers, ...(options.headers || {}) },
     signal: AbortSignal.timeout(60000),
   });
-} catch (error) {
-  console.error('Matilda chat probe failed:', error?.name || 'network error');
-  process.exit(1);
+  return { response, text: await response.text() };
 }
 
-const chatText = await chatResponse.text();
-let parsed;
+let model = 'matilda';
 try {
-  parsed = JSON.parse(chatText);
-} catch {}
-const content = parsed?.choices?.[0]?.message?.content;
-const finish = parsed?.choices?.[0]?.finish_reason;
-console.log(
-  `Chat: HTTP ${chatResponse.status}; finish=${finish || 'none'}; contentChars=${typeof content === 'string' ? content.length : 0}; usage=${parsed?.usage ? 'present' : 'absent'}; elapsedMs=${Date.now() - started}`,
-);
-if (!chatResponse.ok || typeof content !== 'string' || !content.trim()) process.exit(1);
-console.log('Matilda probe passed.');
+  const { response, text } = await request('/models');
+  let ids = [];
+  try {
+    const parsed = JSON.parse(text);
+    const list = Array.isArray(parsed) ? parsed : parsed.data || parsed.models || [];
+    ids = list.map((entry) => entry?.id || entry?.name).filter(Boolean);
+  } catch {}
+  if (ids.length) model = ids[0];
+  report('models', response.ok && ids.length > 0, `HTTP ${response.status}; ids=${ids.length ? ids.join(', ') : 'unavailable'}`);
+} catch (error) {
+  report('models', false, error?.name || 'network error');
+}
+
+async function chat(body) {
+  try {
+    return await request('/chat/completions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'text/event-stream, application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch (error) {
+    report('chat transport', false, error?.name || 'network error');
+    return undefined;
+  }
+}
+
+const plain = await chat({
+  model,
+  messages: [{ role: 'user', content: 'Reply with the single word ok.' }],
+  max_tokens: 16,
+  stream: false,
+});
+if (plain) {
+  let parsed;
+  try {
+    parsed = JSON.parse(plain.text);
+  } catch {}
+  const content = parsed?.choices?.[0]?.message?.content;
+  report(
+    'chat',
+    plain.response.ok && typeof content === 'string' && content.trim().length > 0,
+    `HTTP ${plain.response.status}; finish=${parsed?.choices?.[0]?.finish_reason || 'none'}; contentChars=${typeof content === 'string' ? content.length : 0}; usage=${parsed?.usage ? 'present' : 'absent'}`,
+  );
+}
+
+const streamed = await chat({
+  model,
+  messages: [{ role: 'user', content: 'Count from one to three.' }],
+  max_tokens: 32,
+  stream: true,
+});
+if (streamed) {
+  const contentType = streamed.response.headers.get('content-type') || '';
+  const dataLines = streamed.text
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith('data:'))
+    .map((line) => line.slice(5).trim())
+    .filter(Boolean);
+  const done = dataLines.includes('[DONE]');
+  let events = [];
+  try {
+    events = dataLines.filter((line) => line !== '[DONE]').map((line) => JSON.parse(line));
+  } catch {}
+  const chunkShape = events.length > 0 && events.every((event) => event?.object === 'chat.completion.chunk');
+  const deltas = events.filter((event) => event?.choices?.[0]?.delta).length;
+  report(
+    'stream',
+    streamed.response.ok && contentType.includes('text/event-stream') && done && chunkShape && deltas > 0,
+    `HTTP ${streamed.response.status}; events=${events.length}; deltas=${deltas}; done=${done}; shape=${chunkShape ? 'openai-delta' : 'unknown'}`,
+  );
+}
+
+const schema = await chat({
+  model,
+  messages: [{ role: 'user', content: 'Return a JSON object with status set to the word ok.' }],
+  max_tokens: 128,
+  stream: false,
+  response_format: {
+    type: 'json_schema',
+    json_schema: {
+      name: 'probe_reply',
+      strict: true,
+      schema: {
+        type: 'object',
+        properties: { status: { type: 'string' } },
+        required: ['status'],
+        additionalProperties: false,
+      },
+    },
+  },
+});
+if (schema) {
+  let content;
+  let parsed;
+  try {
+    const envelope = JSON.parse(schema.text);
+    content = envelope?.choices?.[0]?.message?.content;
+    parsed = typeof content === 'string' ? JSON.parse(content) : undefined;
+  } catch {}
+  report(
+    'schema',
+    schema.response.ok && parsed?.status === 'ok',
+    `HTTP ${schema.response.status}; parsed=${parsed ? 'yes' : 'no'}; status=${parsed?.status || 'none'}`,
+  );
+}
+
+if (failures.length) {
+  console.error(`Matilda probe failed: ${failures.join(', ')}.`);
+  process.exit(1);
+}
+console.log('Matilda probe passed: models, chat, stream and schema.');
