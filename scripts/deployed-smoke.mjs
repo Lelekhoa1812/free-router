@@ -88,7 +88,8 @@ try {
   record('OpenAI SDK models.list', modelList.data.length ? 'passed' : 'failed', `${modelList.data.length} visible models`);
 
   const exactModels = modelList.data.filter((m) => ['google', 'nvidia', 'openrouter', 'matilda'].includes(m.owned_by) && m.id.includes('/'));
-  const routes = process.env.SMOKE_MODELS === 'false' ? ['fr-code', 'fr-auto'] : [...new Set(['fr-code', 'fr-auto', ...exactModels.map((m) => m.id)])];
+  const selectedModels = process.env.SMOKE_MODEL_IDS?.split(',').map((value) => value.trim()).filter(Boolean);
+  const routes = process.env.SMOKE_MODELS === 'false' ? ['fr-code', 'fr-auto'] : selectedModels?.length ? [...new Set(['fr-code', 'fr-auto', ...selectedModels])] : [...new Set(['fr-code', 'fr-auto', ...exactModels.map((m) => m.id)])];
   for (const model of routes) {
     const started = Date.now(); let text = ''; let finish = false;
     try {
