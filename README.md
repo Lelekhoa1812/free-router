@@ -1,6 +1,6 @@
 # FreeRouter
 
-FreeRouter is a self-hosted, OpenAI-shaped gateway for configured free-tier Google AI Studio, NVIDIA NIM, and OpenRouter models. It also exposes TypeSafe Jev as a separate Decisions API. The dashboard uses a rotating six-digit shared password delivered over SMTP; registered email addresses receive password mail, and the first address is required at login only until a second recipient is added. Generated `sk-fr-` keys authorize `/v1` API calls.
+FreeRouter is a self-hosted, OpenAI-shaped gateway for configured free-tier Google AI Studio, NVIDIA NIM, and OpenRouter models, plus Matilda (Maincode) as an experimental provider. Matilda remains hidden until its direct probe and FreeRouter gateway certification pass. It also exposes TypeSafe Jev as a separate Decisions API. The dashboard uses a rotating six-digit shared password delivered over SMTP; registered email addresses receive password mail, and the first address is required at login only until a second recipient is added. Generated `sk-fr-` keys authorize `/v1` API calls.
 
 ## Current implementation
 
