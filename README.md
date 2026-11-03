@@ -45,7 +45,7 @@ The temporary content-debugging workflow and complete retention/capacity budgets
 
 ## Deployment
 
-Deploy as a Node.js 24 Vercel application with Fluid Compute and a 300-second function duration. Set the required server variables in the Vercel project. Configure the maintenance cron secret as `CRON_SECRET`, then run the daily job in `vercel.json`. Keep preview deployments isolated from production provider credentials and databases. Follow the Vercel Hobby limits for function duration and daily cron scheduling.
+Deploy as a Node.js 24 Vercel application with Fluid Compute and a 300-second function duration. Set the required server variables in the Vercel project. Configure the maintenance cron secret as `CRON_SECRET`, then run the daily job in `vercel.json`. Provider API keys are encrypted in MongoDB and managed on the Providers page; keep preview deployments isolated from production databases and client data. Follow the Vercel Hobby limits for function duration and daily cron scheduling.
 
 ```sh
 pnpm typecheck

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { getAdminSession } from "@/lib/auth/admin";
-import { getProviderCredentials } from "@/lib/env";
+import { getProviderCredentials } from "@/lib/providers/credentials";
 import { ALIASES, MODEL_BY_ID } from "@/lib/models/catalog";
 import { upstreamChat, translateChatRequest } from "@/lib/providers/openai";
 import { checkAdmission, releaseAdmission } from "@/lib/redis";
@@ -57,7 +57,7 @@ export async function POST(request: Request) {
         try {
           for (const model of candidates) {
             if (aborter.signal.aborted || isClosed) break;
-            const credentials = getProviderCredentials().filter((credential) => credential.provider === model.provider);
+            const credentials = await getProviderCredentials(model.provider);
             const credential = credentials[0];
             if (!credential) continue;
 

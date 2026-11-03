@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { getDb } from "@/lib/db";
 import { authenticateClient, consumeInternalClient } from "@/lib/auth/client";
 import { ALIASES, MODEL_BY_ID, type ModelProfile } from "@/lib/models/catalog";
-import { getProviderCredentials } from "@/lib/env";
+import { getProviderCredentials } from "@/lib/providers/credentials";
 import { buildProviderChatBody, ProviderRequestError, translateChatRequest, upstreamChat, type CanonicalChat } from "@/lib/providers/openai";
 import { checkAdmission, releaseAdmission } from "@/lib/redis";
 import { getRedis, useDailyBudgets } from "@/lib/redis";
@@ -92,7 +92,7 @@ function streamChatResponse(args:{request:Request;rid:string;input:CanonicalChat
           await db.collection("requests").updateOne({requestId:rid},{$setOnInsert:{requestId:rid,keyId,requestedModel:input.model,status:"admitted",createdAt:new Date(),expiresAt:new Date(Date.now()+7*86400000),alias}}, {upsert:true});
           for(const profile of candidates.slice(0,3)){
             if(await isPersistedModelCoolingDown(db,profile.provider,profile.upstream)){failures.push(verdictFor(503,"503:model_overload_cooldown"));continue;}
-            const credentials=getProviderCredentials().filter(c=>c.provider===profile.provider);
+            const credentials=await getProviderCredentials(profile.provider);
             if(!credentials.length)continue;
             const ranked=await Promise.all(credentials.map(async c=>{const [h,b]=await Promise.all([db.collection<any>("credential_health").findOne({provider:profile.provider,fingerprint:c.fingerprint}),db.collection<any>("model_bindings").findOne({provider:profile.provider,model:profile.upstream,fingerprint:c.fingerprint})]);return{c,rank:b?.status==="healthy"?0:h?.authStatus==="healthy"?1:2};}));
             const ordered=[0,1,2].flatMap(rank=>{const group=ranked.filter(x=>x.rank===rank).map(x=>x.c);if(!group.length)return[];const start=(Date.now()+profile.id.length+rank)%group.length;return [...group.slice(start),...group.slice(0,start)]});
@@ -240,7 +240,7 @@ export async function POST(request: Request) {
   if(input.stream===true)return streamChatResponse({request,rid,input,keyId:String(auth.key._id),candidates,alias,db});
   for (const profile of candidates.slice(0, 3)) {
     if(await isPersistedModelCoolingDown(db,profile.provider,profile.upstream)){failures.push(verdictFor(503,"503:model_overload_cooldown"));continue;}
-    const credentials = getProviderCredentials().filter(c => c.provider === profile.provider);
+    const credentials = await getProviderCredentials(profile.provider);
     if (!credentials.length) continue;
     const ranked=await Promise.all(credentials.map(async c=>{const [h,b]=await Promise.all([db.collection<any>("credential_health").findOne({provider:profile.provider,fingerprint:c.fingerprint}),db.collection<any>("model_bindings").findOne({provider:profile.provider,model:profile.upstream,fingerprint:c.fingerprint})]);return{c,rank:b?.status==="healthy"?0:h?.authStatus==="healthy"?1:2,b}}));
     const ordered=[0,1,2].flatMap(rank=>{const group=ranked.filter(x=>x.rank===rank).map(x=>x.c);if(!group.length)return[];const start=(Date.now()+profile.id.length+rank)%group.length;return [...group.slice(start),...group.slice(0,start)]});

@@ -6,7 +6,7 @@ const mocks=vi.hoisted(()=>({
 
 vi.mock("@/lib/db",()=>({getDb:mocks.getDb}));
 vi.mock("@/lib/auth/client",()=>({authenticateClient:mocks.authenticateClient,consumeInternalClient:mocks.consumeInternalClient}));
-vi.mock("@/lib/env",async()=>{const actual=await vi.importActual<any>("@/lib/env");return{...actual,getProviderCredentials:mocks.getProviderCredentials};});
+vi.mock("@/lib/providers/credentials",()=>({getProviderCredentials:mocks.getProviderCredentials}));
 vi.mock("@/lib/providers/openai",async()=>{const actual=await vi.importActual<any>("@/lib/providers/openai");return{...actual,upstreamChat:mocks.upstreamChat};});
 vi.mock("@/lib/redis",()=>({checkAdmission:mocks.checkAdmission,releaseAdmission:mocks.releaseAdmission,getRedis:vi.fn(),useDailyBudgets:vi.fn()}));
 

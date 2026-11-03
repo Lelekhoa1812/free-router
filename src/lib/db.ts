@@ -22,6 +22,7 @@ export async function ensureIndexes() {
       db.collection("admin_users").createIndex({ email: 1 }, { unique: true, name: "admin_user_email" }),
       db.collection("admin_auth").createIndex({ rotatedAt: 1 }, { name: "admin_auth_rotation" }),
       db.collection("credential_health").createIndex({ provider: 1, fingerprint: 1 }, { unique: true, name: "credential_health_key" }),
+      db.collection("provider_credentials").createIndex({ provider: 1, slot: 1 }, { unique: true, name: "provider_credential_slot" }),
       db.collection("credential_health").createIndex({ cooldownUntil: 1 }, { name: "credential_health_cooldown" }),
       db.collection("model_bindings").createIndex({ provider:1,model:1,fingerprint:1 },{unique:true,name:"model_binding_key"}),
       db.collection("model_overload_breakers").createIndex({ provider:1,model:1 },{unique:true,name:"model_overload_breaker_key"}),

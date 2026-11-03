@@ -1,4 +1,4 @@
-import { getProviderCredentials } from "@/lib/env";
+import { getProviderCredentials, type ProviderCredential } from "@/lib/providers/credentials";
 import { MODEL_BY_ID, type ModelProfile } from "@/lib/models/catalog";
 import { parseChatRequest } from "@/lib/validation";
 
@@ -16,7 +16,7 @@ const MATILDA_MAX_MESSAGE_CHARS = 16_000;
 export function resolveProfile(model: string): ModelProfile | undefined {
   return MODEL_BY_ID.get(model);
 }
-export function listCredentials(provider: ModelProfile["provider"]) { return getProviderCredentials().filter((c) => c.provider === provider); }
+export function listCredentials(provider: ModelProfile["provider"]) { return getProviderCredentials(provider); }
 
 function buildMatildaBody(profile: ModelProfile, body: CanonicalChat, outputLimit: number | undefined) {
   const filtered: Record<string, unknown> = { model: profile.upstream, messages: body.messages, stream: true };
@@ -50,7 +50,7 @@ export function buildProviderChatBody(profile: ModelProfile, body: CanonicalChat
   return { ...providerFields, ...glmDefaults, ...(outputLimit === undefined ? {} : { max_tokens: outputLimit }), model: profile.upstream, stream: true };
 }
 
-export async function upstreamChat(profile: ModelProfile, credential: ReturnType<typeof listCredentials>[number], body: CanonicalChat, signal?: AbortSignal) {
+export async function upstreamChat(profile: ModelProfile, credential: ProviderCredential, body: CanonicalChat, signal?: AbortSignal) {
   const { providers } = await import("@/lib/env");
   const config = providers.find((p) => p.id === profile.provider)!;
   const url = `${config.baseUrl}/chat/completions`;

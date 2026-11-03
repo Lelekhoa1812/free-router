@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { createHash } from "node:crypto";
 
 const optional = z.string().optional();
 export const env = {
@@ -28,21 +27,13 @@ export const env = {
 };
 export const providers = env.providers;
 
-export function getProviderCredentials() {
-  return env.providers.flatMap((provider) => Array.from({ length: provider.count }, (_, i) => {
-    const slot = i + 1;
-    const secret = process.env[`${provider.envPrefix}${slot}`]?.trim();
-    return secret ? { provider: provider.id, label: provider.label, slot, secret, fingerprint:createHash("sha256").update(secret).digest("hex") } : null;
-  }).filter((v): v is NonNullable<typeof v> => v !== null));
-}
-
 export function getConfigurationStatus() {
   return {
     mongo: Boolean(env.mongoUri), redis: Boolean(env.redisUrl && env.redisToken),
     smtp: Boolean(env.smtpHost && env.smtpPort && env.smtpUser && env.smtpPassword), sessionSecret: Boolean(env.adminSessionSecret),
     encryptionKey: Boolean(env.stateEncryptionKey), clientKeyHashSecret: Boolean(env.clientKeyHashSecret),
     jev: Boolean(env.jevKey),
-    providers: env.providers.map((p) => ({ id: p.id, label: p.label, slots: Array.from({ length: p.count }, (_, i) => ({ slot: i + 1, configured: Boolean(process.env[`${p.envPrefix}${i + 1}`]?.trim()) })) })),
+    providers: env.providers.map((p) => ({ id: p.id, label: p.label, slots: Array.from({ length: p.count }, (_, i) => ({ slot: i + 1, configured: false })) })),
   };
 }
 

@@ -1,10 +1,10 @@
-import { getProviderCredentials } from '@/lib/env';
+import { getProviderCredentials } from '@/lib/providers/credentials';
 import { getDb } from '@/lib/db';
 import { ALIASES, MODEL_CATALOG, publicModels, type ModelProfile } from '@/lib/models/catalog';
 import { isModelCoolingDown } from '@/lib/models/overload-breaker';
 
 export async function availablePublicModels() {
-  const credentials = getProviderCredentials();
+  const credentials = await getProviderCredentials();
   const fingerprints = credentials.map((c) => c.fingerprint);
   if (!fingerprints.length) return [];
   const db = await getDb();
