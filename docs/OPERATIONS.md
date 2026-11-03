@@ -125,3 +125,7 @@ For rollback, redeploy the prior known-good Vercel deployment and restore the ma
 ## Current operational limits
 
 The first implementation still needs Redis epoch recovery and durable quota reconciliation, MongoDB byte reservations and pressure cleanup, temporary debug capture, complete admin audit/CSRF coverage, real integration and fault suites, Python SDK tests, accessibility/browser tests, and comprehensive Responses SDK/provider certification. The current dashboard is an operational starting point and does not yet provide the full charting, policy editing, quota management, and certification workflows in the product plan. These are explicit release gaps, not implied by the successful basic model smoke results.
+
+### Provider credential migration (3 November 2026)
+
+The production migration authenticated and encrypted 14 credentials in MongoDB: OpenRouter slots 1–4, Google slots 1, 3, 4, and 6, NVIDIA slots 1–5, and Matilda slot 1. Google slots 2 and 5 returned HTTP 401 and were excluded. All other slots are empty and skipped. Matilda slots 2–9 remain available for later keys. The matching provider API variables have been removed from Vercel Production; the deployed app now resolves provider credentials only from MongoDB.

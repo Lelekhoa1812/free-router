@@ -13,6 +13,7 @@ const results = [];
 let clientKeyId;
 let apiKey;
 let cookie;
+let providerSmokeSlot;
 const record = (name, status, detail) => { const item = { name, status, ...(detail ? { detail } : {}) }; results.push(item); console.log(JSON.stringify(item)); };
 const request = (path, init = {}) => fetch(`${base}${path}`, { ...init, headers: { ...(init.headers || {}), ...(cookie ? { cookie } : {}), origin } });
 async function readCurrentAccessState() {
@@ -63,9 +64,30 @@ try {
   record('health/live', live.ok ? 'passed' : 'failed', `HTTP ${live.status}`);
   record('health/ready', ready.ok ? 'passed' : 'failed', `HTTP ${ready.status}`);
   record('admin/provider health', adminProviders.ok ? 'passed' : 'failed', `HTTP ${adminProviders.status}`);
+  if (adminProviders.ok) {
+    const inventory = await adminProviders.json();
+    const summary = inventory.map((provider) => `${provider.id}:${provider.configured}/${provider.slots.length}`).join(', ');
+    const secret = process.env.OPEN_ROUTER_API_KEY_1?.trim();
+    const slot = inventory.find((provider) => provider.id === 'openrouter')?.slots.find((item) => item.slot === 9);
+    if (secret && slot && !slot.configured) {
+      try {
+        const saved = await request('/api/admin/providers', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ provider: 'openrouter', slot: 9, label: 'Temporary deployment smoke', secret, action: 'save' }) });
+        const savedBody = await saved.text();
+        if (!saved.ok || savedBody.includes(secret)) throw new Error(`save returned HTTP ${saved.status} or echoed secret material`);
+        providerSmokeSlot = { provider: 'openrouter', slot: 9 };
+        const remove = await request('/api/admin/providers', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...providerSmokeSlot, action: 'remove' }) });
+        if (!remove.ok) throw new Error(`remove returned HTTP ${remove.status}`);
+        providerSmokeSlot = null;
+        record('Provider-key add/remove and secret redaction', 'passed', 'Temporary slot verified, then removed');
+      } catch (error) {
+        record('Provider-key add/remove and secret redaction', 'failed', error?.message || 'credential management failed');
+      }
+    } else record('Provider-key add/remove and secret redaction', secret ? 'skipped' : 'failed', secret ? `OpenRouter slot 9 is occupied; inventory ${summary}` : 'No local OpenRouter test key is configured.');
+    record('MongoDB provider slot inventory', 'passed', summary);
+  }
   record('OpenAI SDK models.list', modelList.data.length ? 'passed' : 'failed', `${modelList.data.length} visible models`);
 
-  const exactModels = modelList.data.filter((m) => ['google', 'nvidia', 'openrouter'].includes(m.owned_by) && m.id.includes('/'));
+  const exactModels = modelList.data.filter((m) => ['google', 'nvidia', 'openrouter', 'matilda'].includes(m.owned_by) && m.id.includes('/'));
   const routes = process.env.SMOKE_MODELS === 'false' ? ['fr-code', 'fr-auto'] : [...new Set(['fr-code', 'fr-auto', ...exactModels.map((m) => m.id)])];
   for (const model of routes) {
     const started = Date.now(); let text = ''; let finish = false;
@@ -133,6 +155,9 @@ try {
 } catch (error) {
   record('deployment setup', 'failed', String(error?.message || error));
 } finally {
+  if (providerSmokeSlot && cookie) {
+    await request('/api/admin/providers', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...providerSmokeSlot, action: 'remove' }) }).catch(() => undefined);
+  }
   if (clientKeyId && cookie) {
     await request(`/api/admin/keys/${clientKeyId}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'revoke' }) }).catch(() => undefined);
     await request(`/api/admin/keys/${clientKeyId}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'delete' }) }).catch(() => undefined);
