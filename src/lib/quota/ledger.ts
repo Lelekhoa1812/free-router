@@ -129,7 +129,10 @@ export function quotaKeys(target: QuotaTarget, period: QuotaPeriod): string[] {
 /** Build a target for a concrete configured group. */
 export function quotaTarget(config: QuotaConfig, provider: Provider, group: QuotaGroup, model: string): QuotaTarget {
   const providerConfig = config.providers[provider];
-  const modelLimit = model !== "*" ? providerConfig.models?.[model] : undefined;
+  // A group-scoped counter is shared by every model, so a per-model ceiling
+  // would make the same counter mean different things per request. Only a
+  // model-scoped target can carry a model override.
+  const modelLimit = providerConfig.scope === "model" && model !== "*" ? providerConfig.models?.[model] : undefined;
   return {
     provider,
     group: group.id,

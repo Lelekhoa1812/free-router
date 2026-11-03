@@ -1,6 +1,6 @@
 import { providers } from "@/lib/env";
 import { MODEL_CATALOG } from "@/lib/models/catalog";
-import { loadQuotaConfig, type QuotaLimit, type QuotaMode } from "./config";
+import { DEFAULT_PROVIDER_CONFIG, loadQuotaConfig, type QuotaLimit, type QuotaMode } from "./config";
 import { getQuotaSnapshot, quotaTarget, type QuotaSnapshot } from "./ledger";
 
 export interface QuotaDashboardRow {
@@ -81,10 +81,26 @@ export async function getQuotaDashboard(now: Date = new Date()): Promise<QuotaDa
     warnings.push("Google quotas are applied per project, not per API key. Confirm every slot in a Google group belongs to the same project.");
   }
   if (providers.some((provider) => provider.id === "openrouter")) {
-    warnings.push("OpenRouter free-model daily requests are account-wide across all free models and reset at 00:00 UTC.");
+    const timeZone = loaded.config.providers.openrouter.timeZone;
+    warnings.push(`OpenRouter free-model daily requests are account-wide across all free models; the configured day boundary is midnight ${timeZone}.`);
   }
-  warnings.push("NVIDIA does not publish per-model limits; the 40 RPM default is a conservative guard, not a provider contract.");
-  warnings.push("Google and NVIDIA daily limits remain unconfigured until an operator enters them; requests still consume observed counters.");
+  if (loaded.config.providers.nvidia.limits.rpm === DEFAULT_PROVIDER_CONFIG.nvidia.limits.rpm) {
+    warnings.push("NVIDIA does not publish per-model limits; the 40 RPM default is a conservative guard, not a provider contract.");
+  }
+  const hasDailyLimit = (providerId: "google" | "nvidia") => {
+    const providerConfig = loaded.config.providers[providerId];
+    return Boolean(
+      providerConfig.limits.rpd ||
+        providerConfig.limits.tpd ||
+        (providerConfig.scope === "model" && Object.values(providerConfig.models ?? {}).some((limit) => limit.rpd || limit.tpd)),
+    );
+  };
+  const missingDaily = providers
+    .filter((provider) => (provider.id === "google" || provider.id === "nvidia") && !hasDailyLimit(provider.id))
+    .map((provider) => provider.label);
+  if (missingDaily.length) {
+    warnings.push(`${missingDaily.join(" and ")} daily limits remain unconfigured until an operator enters them; requests still consume observed counters.`);
+  }
 
   return {
     available,

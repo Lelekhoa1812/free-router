@@ -118,6 +118,12 @@ export function QuotaPanel() {
             <span>Redis counters could not be read. Configured limits are shown, but usage and remaining values are not current.</span>
           </div>
         )}
+        {error && data && (
+          <div className="warning-banner">
+            <Gauge size={16} />
+            <span>{error}. Showing the last successful reading.</span>
+          </div>
+        )}
         {!!data?.warnings.length && (
           <ul className="quota-warnings">
             {data.warnings.map((warning) => <li key={warning}>{warning}</li>)}

@@ -37,6 +37,27 @@ describe("quota dashboard projection", () => {
     expect(dashboard.warnings.join(" ")).toContain("Google quotas");
   });
 
+  it("drops default-limit warnings once an operator configures those windows", async () => {
+    process.env.QUOTA_CONFIG_JSON = JSON.stringify({
+      providers: {
+        google: { limits: { rpd: 10 } },
+        nvidia: { limits: { rpd: 20, rpm: 41 } },
+      },
+    });
+    const dashboard = await getQuotaDashboard();
+    const warnings = dashboard.warnings.join(" ");
+    expect(warnings).not.toContain("daily limits remain unconfigured");
+    expect(warnings).not.toContain("40 RPM default");
+  });
+
+  it("recognizes daily limits configured per model", async () => {
+    process.env.QUOTA_CONFIG_JSON = JSON.stringify({
+      providers: { google: { models: { "google/gemini-3.6-flash": { rpd: 20 } } } },
+    });
+    const dashboard = await getQuotaDashboard();
+    expect(dashboard.warnings.join(" ")).not.toContain("Google AI Studio daily limits remain unconfigured");
+  });
+
   it("marks the projection unavailable when a counter read fails", async () => {
     mocks.getQuotaSnapshot.mockResolvedValue({
       available: false,

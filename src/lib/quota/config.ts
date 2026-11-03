@@ -7,11 +7,11 @@ export type QuotaMode = "off" | "observe" | "enforce";
 export type QuotaScope = "group" | "model";
 
 export interface QuotaLimit {
-  /** Requests per rolling minute. Zero or absent means unconfigured. */
+  /** Requests per minute. Zero or absent means unconfigured. */
   rpm?: number;
   /** Requests per provider-local day. Zero or absent means unconfigured. */
   rpd?: number;
-  /** Input tokens per rolling minute. */
+  /** Input tokens per minute. */
   tpm?: number;
   /** Tokens per provider-local day. */
   tpd?: number;
@@ -239,6 +239,12 @@ export function parseQuotaConfig(raw: unknown, modeOverride?: string): QuotaConf
     const override = resolveModeOverride(modeOverride);
     const modeValue: QuotaMode = override ?? parsed.data.mode ?? "observe";
     const warnings = modeOverride && !override ? [`quota_mode_invalid:${modeOverride}`] : [];
+    for (const provider of PROVIDER_IDS) {
+      const providerConfig = providers[provider];
+      if (providerConfig.scope === "group" && providerConfig.models && Object.keys(providerConfig.models).length) {
+        warnings.push(`quota_models_ignored:${provider}`);
+      }
+    }
     return {
       config: { mode: modeValue, groups, providers },
       warnings,

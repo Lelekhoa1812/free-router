@@ -58,7 +58,7 @@ A group is a quota boundary, not a UI label. Put keys that share a real provider
 
 `timeZone` controls the daily reset boundary and accepts an IANA time zone. The default Google boundary is `America/Los_Angeles`; the others default to `UTC`. Daylight-saving transitions are handled by calendar-day boundaries rather than a fixed 24-hour TTL.
 
-`limits` accepts `rpm`, `rpd`, `tpm`, and `tpd` as non-negative integers. Zero or an absent value means that window is unconfigured and only observed. Per-model `models` entries merge over the provider limits. Model keys are the public gateway IDs, for example `google/gemini-3.6-flash` (not the upstream-only name).
+`limits` accepts `rpm`, `rpd`, `tpm`, and `tpd` as non-negative integers. Zero or an absent value means that window is unconfigured and only observed. Per-model `models` entries merge over the provider limits when `scope` is `model`. Under `group` scope the shared counter uses only the provider limits, and the dashboard warns that per-model entries are ignored. Model keys are the public gateway IDs, for example `google/gemini-3.6-flash` (not the upstream-only name).
 
 ### Defaults
 
@@ -72,7 +72,7 @@ A group is a quota boundary, not a UI label. Put keys that share a real provider
 ## Accounting
 
 1. The gateway estimates prompt tokens from message text, image parts, tools, and message overhead. It reserves the smaller of the caller's requested output ceiling, the model's advertised maximum, and 8,192 tokens; the default reserve is 4,096.
-2. One Redis Lua script checks the rolling-minute and provider-local-day request windows plus the token windows. In enforce mode a failed check does not increment counters. In observe mode the attempt is recorded and allowed.
+2. One Redis Lua script checks the per-minute and provider-local-day request windows plus the token windows. In enforce mode a failed check does not increment counters. In observe mode the attempt is recorded and allowed.
 3. The reservation is settled once per attempt. Provider-reported usage wins; otherwise the gateway estimates from visible content and tool-call arguments. A stream that fails or is cancelled before usable output releases its token reservation. A dispatched attempt remains counted in the request windows, because it may already have reached the provider.
 4. Retries and credential rotation create separate attempts. They therefore consume separate request-window entries, while the token reservation is reconciled per attempt.
 5. Redis keys contain only provider, group, public model ID, day or minute, and a settlement marker. Prompt content, client keys, and provider secrets are not stored in these keys.
@@ -103,6 +103,7 @@ This first version is read-only. Policy editing remains an environment-variable 
 - Provider quota APIs and billing consoles are not polled. Operator-declared limits must be reviewed when provider terms change.
 - There is no durable reservation journal or Redis epoch recovery yet. A Redis flush, eviction, or outage can undercount an enforcement window.
 - Token estimates are approximate, especially for images, tools, and provider-specific reasoning tokens. Provider-reported usage is preferred whenever it is present.
+- Minute windows are fixed calendar-minute buckets, not a sliding 60-second window. A burst that straddles a minute boundary can briefly exceed the nominal per-minute limit. Keep enforced limits below the provider ceiling when boundary bursts matter.
 - A failed request still counts as an attempt in request windows after dispatch. This can be more conservative than a provider's own accounting.
 - Quota counters do not identify a credential secret. Removing or rotating a slot does not reset counters for its group or model.
 

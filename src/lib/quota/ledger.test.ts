@@ -110,6 +110,19 @@ describe("quota ledger", () => {
     expect(snapshot.resetAt).toContain("2026-11-04T08:00:00.000Z");
   });
 
+  it("applies model limits only when the provider uses model scope", () => {
+    process.env.QUOTA_CONFIG_JSON = JSON.stringify({
+      providers: {
+        google: { models: { "google/gemini-3.6-flash": { rpd: 20 } } },
+        openrouter: { models: { "openrouter/nvidia/nemotron-3.5-super-vl:free": { rpd: 100 } } },
+      },
+    });
+    const config = loadQuotaConfig().config;
+    expect(quotaTargetFor(config, profile, 1).limits.rpd).toBe(20);
+    const openrouter = MODEL_BY_ID.get("openrouter/nvidia/nemotron-3.5-super-vl:free")!;
+    expect(quotaTargetFor(config, openrouter, 1).limits.rpd).toBe(50);
+  });
+
   it("exposes quota failures distinctly from upstream 429s", () => {
     const verdict = quotaVerdict("request_day", 60_000);
     expect(verdict).toMatchObject({ status: 429, quotaExhausted: true, retryAfterMs: 60_000 });

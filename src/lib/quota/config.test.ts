@@ -71,6 +71,16 @@ describe("quota configuration", () => {
     expect(result.config.mode).toBe("enforce");
   });
 
+  it("warns when per-model limits are configured under group scope", () => {
+    const result = parseQuotaConfig({
+      providers: { openrouter: { models: { "openrouter/nvidia/nemotron-3.5-super-vl:free": { rpd: 100 } } } },
+    });
+    expect(result.valid).toBe(true);
+    expect(result.warnings).toContain("quota_models_ignored:openrouter");
+    expect(parseQuotaConfig({ providers: { google: { models: { "google/gemini-3.6-flash": { rpd: 20 } } } } }).warnings)
+      .not.toContain("quota_models_ignored:google");
+  });
+
   it("keeps observation defaults when the JSON is malformed", () => {
     process.env.QUOTA_CONFIG_JSON = "{not-json";
     const result = loadQuotaConfig();

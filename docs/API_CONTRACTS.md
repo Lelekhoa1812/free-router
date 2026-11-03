@@ -18,7 +18,7 @@ The gateway requests upstream streaming even for nonstreaming Chat responses, as
 
 ## Quota admission
 
-Chat Completions and the authenticated Playground pass through a local quota ledger before upstream dispatch. The ledger is configured by server environment variables and is not a public API. `QUOTA_MODE=observe` records request and token counters without blocking; `enforce` rejects a request that would exceed a configured rolling-minute or provider-local-day window; `off` bypasses the ledger.
+Chat Completions and the authenticated Playground pass through a local quota ledger before upstream dispatch. The ledger is configured by server environment variables and is not a public API. `QUOTA_MODE=observe` records request and token counters without blocking; `enforce` rejects a request that would exceed a configured per-minute or provider-local-day window; `off` bypasses the ledger.
 
 A local rejection is an HTTP 429 with code `quota_exhausted`, a bounded `Retry-After` computed from the exhausted window, and the usual `error` envelope. This code is distinct from an upstream provider 429, which uses the existing upstream classification and may surface as `rate_limit_exceeded`. A streamed request denied before dispatch receives an SSE error frame and no successful `[DONE]` frame.
 
