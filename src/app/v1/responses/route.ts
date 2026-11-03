@@ -4,6 +4,7 @@ import { getDb } from "@/lib/db";
 import { authenticateClient, bindInternalClient } from "@/lib/auth/client";
 import { encryptJson, decryptJson } from "@/lib/crypto";
 import { readJson, jsonError } from "@/lib/http";
+import { parseResponsesRequest, RequestValidationError } from "@/lib/validation";
 import { POST as chatCompletions } from "@/app/v1/chat/completions/route";
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -165,12 +166,11 @@ function streamResponses(chat: Response, options: { id: string; model: string; i
 export async function POST(request: Request) {
   const rid = request.headers.get("x-request-id") || `fr_${randomUUID()}`;
   let body: any; try { body = await readJson(request); } catch (e) { const m = e instanceof Error ? e.message : "Invalid JSON"; return jsonError(m === "body_too_large" ? 413 : m==="unsupported_content_type"||m==="unsupported_encoding"?415:400, m, "invalid_request", rid); }
-  if (!body || typeof body !== "object" || typeof body.model !== "string") return jsonError(400,"model is required","invalid_request",rid);
+  try { body = parseResponsesRequest(body); } catch (e) {
+    if (e instanceof RequestValidationError) return jsonError(400, e.message, e.kind === "unsupported_parameter" ? "unsupported_parameter" : "invalid_request", rid, e.param);
+    return jsonError(400, e instanceof Error ? e.message : "Invalid request", "invalid_request", rid);
+  }
   const auth = await authenticateClient(request,"responses",body.model); if ("error" in auth) return jsonError(auth.error === "invalid_api_key"?401:403,"API key cannot access this request",String(auth.error),rid);
-  const accepted=new Set(["model","input","instructions","previous_response_id","stream","store","tools","tool_choice","max_output_tokens","reasoning","text","parallel_tool_calls","metadata","truncation","include"]);const unknown=Object.keys(body).find(k=>!accepted.has(k));if(unknown)return jsonError(400,`Unsupported Responses field: ${unknown}`,"unsupported_parameter",rid);
-  if(body.include!==undefined&&(!Array.isArray(body.include)||body.include.length>0))return jsonError(400,"Requested include fields are not available for this provider profile","unsupported_parameter",rid);
-  if(body.instructions!==undefined&&typeof body.instructions!=="string")return jsonError(400,"instructions must be a string","invalid_request",rid);
-  if(body.metadata!==undefined&&(!body.metadata||typeof body.metadata!=="object"||Array.isArray(body.metadata)||Object.keys(body.metadata).length>16||Object.entries(body.metadata).some(([k,v])=>k.length>64||typeof v!=="string"||v.length>512)))return jsonError(400,"metadata must contain at most 16 short string entries","invalid_request",rid);
   const store = body.store !== false; let history: ChatMessage[] = [];
   try {
     if (body.previous_response_id) {
@@ -181,8 +181,6 @@ export async function POST(request: Request) {
     }
     const fresh = convertInput(body.input ?? "");
     const messages: ChatMessage[] = [...history]; if (body.instructions) messages.push({ role: "developer", content: body.instructions }); messages.push(...fresh);
-    const unsupported = ["conversation","background","truncation"].find(k => body[k] !== undefined && (k !== "truncation" || body[k] !== "disabled"));
-    if (unsupported) return jsonError(400,`${unsupported} is unsupported in v1`,"unsupported_parameter",rid);
     if (body.tools?.some((t:any)=>t.type!=="function")) return jsonError(400,"Only caller-executed function tools are supported","unsupported_tool",rid);
     const toolChoice=body.tool_choice?.type==="function"?{type:"function",function:{name:body.tool_choice.name}}:body.tool_choice;
     const streaming = body.stream === true;

@@ -12,6 +12,8 @@ import { normalizeChatEvent,parseSseData } from "@/lib/providers/sse";
 import Ajv from "ajv";
 import { jsonError, readJson } from "@/lib/http";
 import { clearModelOverload, isPersistedModelCoolingDown, recordModelOverload } from "@/lib/models/overload-breaker";
+import { applyVerdict, classifyUpstream, summarizeFailures, type UpstreamVerdict } from "@/lib/failures";
+import { RequestValidationError } from "@/lib/validation";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 const ajv=new Ajv({allErrors:true,strict:false,allowUnionTypes:true});
@@ -49,8 +51,8 @@ function validateGenerated(input:CanonicalChat,content:string,toolCalls:any[]){
   return null;
 }
 function decodeSseEvent(text: string) { const data = parseSseData(text).join("\n"); if (!data || data === "[DONE]") return null; try { return JSON.parse(data); } catch { return null; } }
-function retryAt(response:Response){const value=response.headers.get("retry-after");if(!value)return new Date(Date.now()+30000);const seconds=Number(value);const date=Number.isFinite(seconds)?Date.now()+seconds*1000:Date.parse(value);return new Date(Math.min(Date.now()+86400000,Number.isFinite(date)?date:Date.now()+30000))}
 async function upstreamErrorCode(response:Response){try{const body=await response.clone().json() as any;const code=body?.error?.code??body?.error?.status??body?.code;return typeof code==="string"||typeof code==="number"?String(code).replace(/[^A-Za-z0-9_.-]/g,"").slice(0,80):""}catch{return ""}}
+function verdictFor(status:number|null,reason:string):UpstreamVerdict{return {status,action:"continue",reason};}
 
 function streamChatResponse(args:{request:Request;rid:string;input:CanonicalChat;keyId:string;candidates:ModelProfile[];alias:boolean;db:Awaited<ReturnType<typeof getDb>>}) {
   const {request,rid,input,keyId,candidates,alias,db}=args;
@@ -78,18 +80,18 @@ function streamChatResponse(args:{request:Request;rid:string;input:CanonicalChat
       heartbeat=setInterval(()=>write(": freerouter keepalive\n\n"),10000);
       deadline=setTimeout(()=>aborter.abort(new Error("gateway_deadline")),275000);
       void (async()=>{
-        const failures:string[]=[];let dispatched=0;let semanticDelivered=false;let finalStatus="pending";
+        const failures:UpstreamVerdict[]=[];let dispatched=0;let semanticDelivered=false;let finalStatus="pending";
         try {
           await db.collection("requests").updateOne({requestId:rid},{$setOnInsert:{requestId:rid,keyId,requestedModel:input.model,status:"admitted",createdAt:new Date(),expiresAt:new Date(Date.now()+7*86400000),alias}}, {upsert:true});
           for(const profile of candidates.slice(0,3)){
-            if(await isPersistedModelCoolingDown(db,profile.provider,profile.upstream)){failures.push("503:model_overload_cooldown");continue;}
+            if(await isPersistedModelCoolingDown(db,profile.provider,profile.upstream)){failures.push(verdictFor(503,"503:model_overload_cooldown"));continue;}
             const credentials=getProviderCredentials().filter(c=>c.provider===profile.provider);
             if(!credentials.length)continue;
             const ranked=await Promise.all(credentials.map(async c=>{const [h,b]=await Promise.all([db.collection<any>("credential_health").findOne({provider:profile.provider,fingerprint:c.fingerprint}),db.collection<any>("model_bindings").findOne({provider:profile.provider,model:profile.upstream,fingerprint:c.fingerprint})]);return{c,rank:b?.status==="healthy"?0:h?.authStatus==="healthy"?1:2};}));
             const ordered=[0,1,2].flatMap(rank=>{const group=ranked.filter(x=>x.rank===rank).map(x=>x.c);if(!group.length)return[];const start=(Date.now()+profile.id.length+rank)%group.length;return [...group.slice(start),...group.slice(0,start)]});
             for(const credential of ordered){
               if(dispatched>=3||aborter.signal.aborted)break;
-              if(await isPersistedModelCoolingDown(db,profile.provider,profile.upstream)){failures.push("503:model_overload_cooldown");break;}
+              if(await isPersistedModelCoolingDown(db,profile.provider,profile.upstream)){failures.push(verdictFor(503,"503:model_overload_cooldown"));break;}
               const lease=`${rid}:${profile.id}:${credential.slot}`;
               const scopes=["global",`client:${keyId}`,`provider:${profile.provider}:account:${credential.slot}`,`binding:${profile.id}:${credential.slot}`];
               try{
@@ -98,7 +100,7 @@ function streamChatResponse(args:{request:Request;rid:string;input:CanonicalChat
                 const binding=await db.collection<any>("model_bindings").findOne({provider:profile.provider,model:profile.upstream,fingerprint:credential.fingerprint});
                 if(binding?.status==="unavailable"||(binding?.cooldownUntil&&new Date(binding.cooldownUntil)>new Date())||((input.response_format as any)?.type==="json_schema"&&binding?.schemaStatus==="failed")||(input.tools as any[]|undefined)?.some(t=>t.function?.strict===true&&binding?.schemaStatus==="failed"))continue;
                 const admission=await checkAdmission(scopes,lease);
-                if(!admission.allowed){failures.push("429:admission_denied");continue;}
+                if(!admission.allowed){failures.push(verdictFor(429,"429:admission_denied"));continue;}
                 activeScopes=scopes;activeLease=lease;dispatched++;
                 const attemptIndex=dispatched-1;
                 await db.collection<any>("requests").updateOne({requestId:rid},{$push:{attempts:{model:profile.id,provider:profile.provider,credentialSlot:credential.slot,status:"dispatched",startedAt:new Date()}},$set:{status:"connecting",model:profile.id,provider:profile.provider,credentialSlot:credential.slot}} as any);
@@ -106,14 +108,13 @@ function streamChatResponse(args:{request:Request;rid:string;input:CanonicalChat
                 const requestStartedAt=new Date();
                 const upstream=await upstreamChat(profile,credential,body,aborter.signal);
                 if(!upstream.ok||!upstream.body){
-                  const code=await upstreamErrorCode(upstream);const status=`${upstream.status}${code?`:${code}`:""}`;failures.push(status);
-                  await db.collection("requests").updateOne({requestId:rid},{$set:{[`attempts.${attemptIndex}.status`]:"failed",[`attempts.${attemptIndex}.failure`]:status}});
+                  const verdict=classifyUpstream({status:upstream.status,providerCode:await upstreamErrorCode(upstream),retryAfter:upstream.headers.get("retry-after")});
+                  failures.push(verdict);
+                  await db.collection("requests").updateOne({requestId:rid},{$set:{[`attempts.${attemptIndex}.status`]:"failed",[`attempts.${attemptIndex}.failure`]:verdict.reason}});
                   await releaseAdmission(scopes,lease);activeScopes=undefined;activeLease=undefined;
-                  if(upstream.status===401)await db.collection("credential_health").updateOne({provider:profile.provider,fingerprint:credential.fingerprint},{$set:{authStatus:"invalid",checkedAt:new Date()}},{upsert:true});
-                  else if([400,404,410].includes(upstream.status))await db.collection("model_bindings").updateOne({provider:profile.provider,model:profile.upstream,fingerprint:credential.fingerprint},{$set:{status:"unavailable",reason:`upstream_${upstream.status}`,checkedAt:new Date()}},{upsert:true});
-                  else if(upstream.status===429)await db.collection("model_bindings").updateOne({provider:profile.provider,model:profile.upstream,fingerprint:credential.fingerprint},{$set:{cooldownUntil:retryAt(upstream),reason:"upstream_rate_limit",checkedAt:new Date()}},{upsert:true});
-                  else if(upstream.status>=500)await db.collection("model_bindings").updateOne({provider:profile.provider,model:profile.upstream,fingerprint:credential.fingerprint},{$set:{cooldownUntil:new Date(Date.now()+30000),reason:"upstream_server_error",checkedAt:new Date()}},{upsert:true});
-                  if(upstream.status===503){await recordModelOverload(db,profile.provider,profile.upstream);break;}
+                  await applyVerdict(db,verdict,{provider:profile.provider,model:profile.upstream,fingerprint:credential.fingerprint});
+                  if(verdict.overload)await recordModelOverload(db,profile.provider,profile.upstream);
+                  if(verdict.action!=="continue")break;
                   continue;
                 }
                 await db.collection("credential_health").updateOne({provider:profile.provider,fingerprint:credential.fingerprint},{$set:{authStatus:"healthy",lastSuccessAt:new Date(),lastSuccessModel:profile.upstream}},{upsert:true});
@@ -163,12 +164,12 @@ function streamChatResponse(args:{request:Request;rid:string;input:CanonicalChat
                 const assembledTools=[...toolCalls.values()];
                 const invalid=strict?validateGenerated(input,content,assembledTools):null;
                 if(invalid){
-                  failures.push(invalid);await db.collection("model_bindings").updateOne({provider:profile.provider,model:profile.upstream,fingerprint:credential.fingerprint},{$set:{schemaStatus:"failed",schemaFailure:invalid,checkedAt:new Date()}},{upsert:true});
+                  failures.push(verdictFor(200,invalid));await db.collection("model_bindings").updateOne({provider:profile.provider,model:profile.upstream,fingerprint:credential.fingerprint},{$set:{schemaStatus:"failed",schemaFailure:invalid,checkedAt:new Date()}},{upsert:true});
                   await db.collection("requests").updateOne({requestId:rid},{$set:{[`attempts.${attemptIndex}.status`]:"invalid_output",[`attempts.${attemptIndex}.failure`]:invalid}});
                   await releaseAdmission(scopes,lease);activeScopes=undefined;activeLease=undefined;continue;
                 }
                 if(!doneSent||!semantic){
-                  const reason=!doneSent?"incomplete_upstream_stream":"empty_upstream_output";failures.push(reason);
+                  const reason=!doneSent?"incomplete_upstream_stream":"empty_upstream_output";failures.push(verdictFor(null,reason));
                   await db.collection("requests").updateOne({requestId:rid},{$set:{[`attempts.${attemptIndex}.status`]:"failed",[`attempts.${attemptIndex}.failure`]:reason}});
                   await releaseAdmission(scopes,lease);activeScopes=undefined;activeLease=undefined;
                   if(semanticDelivered){failFrame("Upstream stream ended before completion","incomplete_upstream_stream");finalStatus="failed";break;}
@@ -181,8 +182,8 @@ function streamChatResponse(args:{request:Request;rid:string;input:CanonicalChat
                 finalStatus="completed";break;
               }catch(error){
                 if(activeScopes&&activeLease){await releaseAdmission(activeScopes,activeLease).catch(()=>undefined);activeScopes=undefined;activeLease=undefined;}
-                if(aborter.signal.aborted){failures.push("aborted");break;}
-                const reason=error instanceof Error?error.message:"upstream_error";failures.push(reason);
+                if(aborter.signal.aborted){failures.push(verdictFor(null,"aborted"));break;}
+                const reason=error instanceof Error?error.message:"upstream_error";failures.push(verdictFor(null,reason));
                 if(semanticDelivered){failFrame("Upstream stream failed",reason==="upstream_protocol_error"?reason:"upstream_stream_error");finalStatus="failed";break;}
                 await db.collection("requests").updateOne({requestId:rid},{$set:{status:"retrying",[`attempts.${dispatched-1}.status`]:"failed",[`attempts.${dispatched-1}.failure`]:reason}}).catch(()=>undefined);
               }finally{
@@ -194,11 +195,10 @@ function streamChatResponse(args:{request:Request;rid:string;input:CanonicalChat
             if(!alias||dispatched>=3||semanticDelivered)break;
           }
           if(finalStatus!=="completed"&&finalStatus!=="failed"){
-            const allLimited=failures.length>0&&failures.every(x=>x.startsWith("429"));
-            const code=allLimited?"rate_limit_exceeded":failures.some(x=>x.includes("schema_validation")||x.startsWith("invalid_"))?"upstream_invalid_output":"upstream_unavailable";
-            failFrame(allLimited?"Upstream quota is temporarily exhausted":"No eligible upstream produced a complete response",code);
+            const summary=summarizeFailures(failures,dispatched);
+            failFrame(summary.status===429?"Upstream quota is temporarily exhausted":"No eligible upstream produced a complete response",summary.code);
           }
-          await db.collection("requests").updateOne({requestId:rid},{$set:{status:finalStatus,completedAt:new Date(),failureStatuses:failures,dispatchedAttempts:dispatched}}).catch(()=>undefined);
+          await db.collection("requests").updateOne({requestId:rid},{$set:{status:finalStatus,completedAt:new Date(),failureStatuses:failures.map(f=>f.reason),dispatchedAttempts:dispatched}}).catch(()=>undefined);
         }catch(error){
           const reason=error instanceof Error?error.message:"gateway_stream_error";
           if(!aborter.signal.aborted)failFrame("Gateway could not complete the request",reason==="gateway_deadline"?"gateway_timeout":"gateway_stream_error");
@@ -213,24 +213,28 @@ function streamChatResponse(args:{request:Request;rid:string;input:CanonicalChat
 export async function POST(request: Request) {
   const rid = request.headers.get("x-request-id") || `fr_${randomUUID()}`;
   let input: CanonicalChat;
-  try { input = translateChatRequest(await readJson(request)); } catch (e) { const m = e instanceof Error ? e.message : "Invalid request"; return jsonError(m === "body_too_large" ? 413 : m === "unsupported_content_type"||m==="unsupported_encoding" ? 415 : 400, m, "invalid_request", rid); }
+  try { input = translateChatRequest(await readJson(request)); } catch (e) {
+    if (e instanceof RequestValidationError) return jsonError(400, e.message, e.kind === "unsupported_parameter" ? "unsupported_parameter" : "invalid_request", rid, e.param);
+    const m = e instanceof Error ? e.message : "Invalid request";
+    return jsonError(m === "body_too_large" ? 413 : m === "unsupported_content_type"||m==="unsupported_encoding" ? 415 : 400, m, "invalid_request", rid);
+  }
   const internalClient = consumeInternalClient(request);
   const auth = internalClient ? { key: internalClient } : await authenticateClient(request, "chat", input.model);
   if ("error" in auth) return jsonError(auth.error === "invalid_api_key" ? 401 : 403, auth.error === "invalid_api_key" ? "Invalid API key" : "API key cannot access this request", String(auth.error), rid);
   const alias = input.model.startsWith("fr-"); const category=input.model==="fr-auto"?await classifyAuto(input,String(auth.key._id),auth.key.allowJevRouting!==false):"code"; const declared = resolveCandidates(input.model,category); const candidates = declared.filter(p => supportsRequest(p,input));
   if (!candidates.length) return declared.length ? jsonError(400, "The selected model does not support one or more requested capabilities", "unsupported_capability", rid) : jsonError(404, "Unknown or unavailable model", "model_not_found", rid);
-  const failures: string[] = [];let dispatched=0;
+  const failures: UpstreamVerdict[] = [];let dispatched=0;
   const db = await getDb();
   if(input.stream===true)return streamChatResponse({request,rid,input,keyId:String(auth.key._id),candidates,alias,db});
   for (const profile of candidates.slice(0, 3)) {
-    if(await isPersistedModelCoolingDown(db,profile.provider,profile.upstream)){failures.push("503:model_overload_cooldown");continue;}
+    if(await isPersistedModelCoolingDown(db,profile.provider,profile.upstream)){failures.push(verdictFor(503,"503:model_overload_cooldown"));continue;}
     const credentials = getProviderCredentials().filter(c => c.provider === profile.provider);
     if (!credentials.length) continue;
     const ranked=await Promise.all(credentials.map(async c=>{const [h,b]=await Promise.all([db.collection<any>("credential_health").findOne({provider:profile.provider,fingerprint:c.fingerprint}),db.collection<any>("model_bindings").findOne({provider:profile.provider,model:profile.upstream,fingerprint:c.fingerprint})]);return{c,rank:b?.status==="healthy"?0:h?.authStatus==="healthy"?1:2,b}}));
     const ordered=[0,1,2].flatMap(rank=>{const group=ranked.filter(x=>x.rank===rank).map(x=>x.c);if(!group.length)return[];const start=(Date.now()+profile.id.length+rank)%group.length;return [...group.slice(start),...group.slice(0,start)]});
     for (const credential of ordered) {
       if(dispatched>=3)break;
-      if(await isPersistedModelCoolingDown(db,profile.provider,profile.upstream)){failures.push("503:model_overload_cooldown");break;}
+      if(await isPersistedModelCoolingDown(db,profile.provider,profile.upstream)){failures.push(verdictFor(503,"503:model_overload_cooldown"));break;}
       const lease = `${rid}:${profile.id}:${credential.slot}`;
       const scopes=[`global`, `client:${auth.key._id}`, `provider:${profile.provider}:account:${credential.slot}`, `binding:${profile.id}:${credential.slot}`];
       let admitted = false;
@@ -244,12 +248,11 @@ export async function POST(request: Request) {
         const requestStartedAt=new Date();
         const upstream = await upstreamChat(profile, credential, body, request.signal);
         if (!upstream.ok || !upstream.body) {
-          const code=await upstreamErrorCode(upstream);failures.push(`${upstream.status}${code?`:${code}`:""}`);await releaseAdmission(scopes,lease);
-          if(upstream.status===401)await db.collection("credential_health").updateOne({provider:profile.provider,fingerprint:credential.fingerprint},{$set:{authStatus:"invalid",checkedAt:new Date()}},{upsert:true});
-          else if(upstream.status===400||upstream.status===404||upstream.status===410)await db.collection("model_bindings").updateOne({provider:profile.provider,model:profile.upstream,fingerprint:credential.fingerprint},{$set:{status:"unavailable",reason:`upstream_${upstream.status}`,checkedAt:new Date()}},{upsert:true});
-          else if(upstream.status===429)await db.collection("model_bindings").updateOne({provider:profile.provider,model:profile.upstream,fingerprint:credential.fingerprint},{$set:{cooldownUntil:retryAt(upstream),reason:"upstream_rate_limit",checkedAt:new Date()}},{upsert:true});
-          else if(upstream.status>=500)await db.collection("model_bindings").updateOne({provider:profile.provider,model:profile.upstream,fingerprint:credential.fingerprint},{$set:{cooldownUntil:new Date(Date.now()+30000),reason:"upstream_server_error",checkedAt:new Date()}},{upsert:true});
-          if(upstream.status===503){await recordModelOverload(db,profile.provider,profile.upstream);break;}
+          const verdict=classifyUpstream({status:upstream.status,providerCode:await upstreamErrorCode(upstream),retryAfter:upstream.headers.get("retry-after")});
+          failures.push(verdict);await releaseAdmission(scopes,lease);
+          await applyVerdict(db,verdict,{provider:profile.provider,model:profile.upstream,fingerprint:credential.fingerprint});
+          if(verdict.overload)await recordModelOverload(db,profile.provider,profile.upstream);
+          if(verdict.action!=="continue")break;
           continue;
         }
         await db.collection("credential_health").updateOne({provider:profile.provider,fingerprint:credential.fingerprint},{$set:{authStatus:"healthy",lastSuccessAt:new Date(),lastSuccessModel:profile.upstream}},{upsert:true});await db.collection("model_bindings").updateOne({provider:profile.provider,model:profile.upstream,fingerprint:credential.fingerprint},{$set:{status:"healthy",lastSuccessAt:new Date()},$unset:{cooldownUntil:"",reason:""}},{upsert:true});
@@ -266,14 +269,15 @@ export async function POST(request: Request) {
         for (const event of normalized as any[]) for (const call of event.choices?.[0]?.delta?.tool_calls || []) { const prior = toolCalls.get(call.index) || { id: call.id, type: "function", function: { name: "", arguments: "" } }; if (call.id) prior.id = call.id; if (call.function?.name) prior.function.name += call.function.name; if (call.function?.arguments) prior.function.arguments += call.function.arguments; toolCalls.set(call.index, prior); }
         await releaseAdmission(scopes, lease); await db?.collection("requests").updateOne({ requestId: rid }, { $set: { status: "completed", completedAt: new Date() } });
         const finish=(normalized as any[]).map(e=>e?.choices?.[0]?.finish_reason).filter(Boolean).at(-1);const usage=(normalized as any[]).map(e=>e?.usage).filter(Boolean).at(-1);const toolList=[...toolCalls.values()];const invalid=validateGenerated(input,content,toolList);
-        if(invalid){failures.push(invalid);await db.collection("model_bindings").updateOne({provider:profile.provider,model:profile.upstream,fingerprint:credential.fingerprint},{$set:{schemaStatus:"failed",schemaFailure:invalid,checkedAt:new Date()}},{upsert:true});continue;}
+        if(invalid){failures.push(verdictFor(200,invalid));await db.collection("model_bindings").updateOne({provider:profile.provider,model:profile.upstream,fingerprint:credential.fingerprint},{$set:{schemaStatus:"failed",schemaFailure:invalid,checkedAt:new Date()}},{upsert:true});continue;}
         if((input.response_format as any)?.type==="json_schema"||(input.tools as any[]|undefined)?.some(t=>t.function?.strict===true))await db.collection("model_bindings").updateOne({provider:profile.provider,model:profile.upstream,fingerprint:credential.fingerprint},{$set:{schemaStatus:"passed",schemaCheckedAt:new Date()},$unset:{schemaFailure:""}},{upsert:true});
         const choices = [{ index: 0, message: { role: "assistant", content: content || null, ...(toolCalls.size ? { tool_calls: [...toolCalls.values()] } : {}) }, finish_reason: finish || (toolCalls.size ? "tool_calls" : "stop") }];
         return Response.json({ id: (first as any)?.id || `chatcmpl-${rid}`, object: "chat.completion", created: (first as any)?.created || Math.floor(Date.now()/1000), model: input.model, choices, ...(usage?{usage}:{}) }, { headers: { "cache-control": "no-store", "x-request-id": rid, "x-freerouter-resolved-model": profile.id } });
-      } catch (e) { if (admitted) await releaseAdmission(scopes, lease).catch(() => undefined); failures.push(e instanceof Error ? e.name : "error"); }
+      } catch (e) { if (admitted) await releaseAdmission(scopes, lease).catch(() => undefined); failures.push(verdictFor(null,e instanceof Error ? e.name : "error")); }
     }
     if (!alias||dispatched>=3) break;
   }
-  void db.collection("requests").insertOne({requestId:rid,keyId:String(auth.key._id),requestedModel:input.model,status:"failed",failureStatuses:failures,dispatchedAttempts:dispatched,createdAt:new Date(),expiresAt:new Date(Date.now()+7*86400000)}).catch(()=>undefined);
-  const upstreamLimited=failures.length>0&&failures.every(x=>x.startsWith("429"));const badRequest=failures.length>0&&failures.every(x=>x.startsWith("400"));const invalidOutput=failures.some(x=>/^(invalid_|unknown_tool|.*schema_validation)/.test(x));return jsonError(upstreamLimited?429:badRequest?400:invalidOutput?502:failures.length||dispatched?503:429, upstreamLimited?"Upstream quota is temporarily exhausted":badRequest?"The upstream rejected this request":invalidOutput?"The upstream did not satisfy the requested output contract":"No eligible upstream model is currently available", upstreamLimited?"rate_limit_exceeded":badRequest?"upstream_request_rejected":invalidOutput?"upstream_invalid_output":failures.length||dispatched?"upstream_unavailable":"rate_limit_exceeded", rid);
+  void db.collection("requests").insertOne({requestId:rid,keyId:String(auth.key._id),requestedModel:input.model,status:"failed",failureStatuses:failures.map(f=>f.reason),dispatchedAttempts:dispatched,createdAt:new Date(),expiresAt:new Date(Date.now()+7*86400000)}).catch(()=>undefined);
+  const summary=summarizeFailures(failures,dispatched);
+  return jsonError(summary.status,summary.message,summary.code,rid);
 }
