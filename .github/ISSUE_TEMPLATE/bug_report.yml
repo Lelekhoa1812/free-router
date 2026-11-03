@@ -1,0 +1,103 @@
+name: Bug report
+description: Something behaves differently from the documented contract.
+title: "[bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not paste client keys (`sk-fr-…`), provider keys, dashboard cookies or session secrets.
+        Redact them and keep the request ID — that is enough to correlate a request with server logs.
+
+        This is a public tracker. Report a security-sensitive defect to the maintainer directly instead of filing it here.
+
+  - type: textarea
+    id: observed
+    attributes:
+      label: What happened
+      description: The observed behaviour, with the concrete input that produced it.
+      placeholder: |
+        POST /v1/chat/completions with model fr-auto and a three-message history returns
+        500 upstream_unavailable. The same request sent directly to the provider succeeds.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+      description: What the documented contract says should happen, and where that is written down.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: The smallest sequence that shows the defect. A curl command, a script or numbered dashboard steps. Say whether it reproduces every time.
+      placeholder: |
+        curl -sS http://localhost:3000/v1/chat/completions \
+          -H "authorization: Bearer $KEY" \
+          -H 'content-type: application/json' \
+          -d '{"model":"fr-auto","messages":[{"role":"user","content":"hi"}]}'
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: The nearest boundary. Pick the surface you called, not where you think the cause is.
+      options:
+        - /v1/chat/completions
+        - /v1/responses
+        - /v1/models
+        - Admin dashboard or auth
+        - Provider routing or quota
+        - Storage, admission or key handling
+        - Deployment, build or CI
+    validations:
+      required: true
+
+  - type: input
+    id: revision
+    attributes:
+      label: Revision
+      description: Commit SHA that produced the behaviour, and where it ran — local dev, preview or production. A deployment URL alone is not a revision.
+      placeholder: 5a4d7ef, production
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Node and pnpm versions, provider, and anything unusual such as a local Redis shim, a different Mongo instance or a proxy.
+      placeholder: Node 24.22.2, pnpm 10.34.9, Google AI Studio
+    validations:
+      required: false
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Response body with its request ID, the matching server log line, provider status, or a failing test. Text is more useful than a screenshot for non-visual defects.
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact and workaround
+      description: Who is blocked, how often it happens, and what you do instead in the meantime.
+    validations:
+      required: false
+
+  - type: textarea
+    id: limits
+    attributes:
+      label: What you ruled out
+      description: Checks already made, and anything you could not test. A suspected cause stays a hypothesis until the evidence shows it.
+    validations:
+      required: false
