@@ -23,4 +23,10 @@ describe("model registry",()=>{
     expect(MODEL_BY_ID.get(id)?.status).toBe("experimental");
     expect(publicModels().map(m=>m.id)).not.toContain(id);
   });
+  it("keeps GLM-5.3-Flash out of public routing until a deployed gateway stream is verified",()=>{
+    const id="nvidia/z-ai/glm-5.3-flash";
+    expect(MODEL_BY_ID.get(id)?.status).toBe("experimental");
+    expect(publicModels().map(m=>m.id)).not.toContain(id);
+    expect(ALIASES["fr-code"]).not.toContain(id);
+  });
 });

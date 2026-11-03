@@ -18,7 +18,7 @@ const rows: Array<[Provider,string,string,number|null,number|null,CapabilityStat
   ["google","gemma-4-26b-a4b-it","Gemma 4 26B A4B IT",262144,32768,"unknown","passed","passed","unknown","standard","experimental","Inline thought markers require a certified parser."],
   ["google","gemma-4-31b-it","Gemma 4 31B IT",262144,32768,"unknown","unknown","unknown","unknown","slow","experimental","Probe returned a slow/incomplete response."],
   ["google","gemini-flash-lite-latest","Gemini Flash-Lite Latest",1048576,65536,"unknown","unknown","unknown","unknown","unknown","experimental","Floating alias must be resolved and certified before activation."],
-  ["nvidia","z-ai/glm-5.3-flash","GLM 5.3 Flash",1048576,32768,"passed","passed","passed","unknown","standard","ready"],
+  ["nvidia","z-ai/glm-5.3-flash","GLM 5.3 Flash",1048576,32768,"passed","passed","passed","unknown","slow","experimental","Direct NVIDIA streaming passed, but the deployed gateway did not receive response headers within 90 seconds across multiple credentials; hidden pending a successful gateway retest."],
   ["nvidia","deepseek-ai/deepseek-v4.1-flash","DeepSeek V4.1 Flash",1048576,32768,"passed","passed","failed","unknown","slow","experimental","Tool-call protocol needs normalization; schema probe failed."],
   ["nvidia","minimaxai/minimax-m3.1-flash","MiniMax M3.1 Flash",262144,32768,"passed","unknown","unknown","unknown","slow","experimental","Tool/schema probes timed out."],
   ["nvidia","nvidia/nemotron-3.5-super-vl-120b-a12b","Nemotron 3.5 Super VL",1000000,131072,"passed","passed","passed","unknown","fast","ready"],
@@ -51,7 +51,7 @@ export const MODEL_CATALOG: ModelProfile[] = rows.map(([provider, upstream, labe
 
 export const ALIASES: Record<string, string[]> = {
   "fr-fast": ["nvidia/poolside/laguna-xs-2.1", "google/gemini-3.5-flash-lite"],
-  "fr-code": ["nvidia/z-ai/glm-5.3-flash", "nvidia/poolside/laguna-xs-2.1", "openrouter/cohere/north-mini-code:free", "google/gemini-3.5-flash"],
+  "fr-code": ["nvidia/poolside/laguna-xs-2.1", "openrouter/cohere/north-mini-code:free", "google/gemini-3.5-flash"],
   "fr-quality": ["nvidia/deepseek-ai/deepseek-v4.1-flash", "nvidia/stepfun-ai/step-5-preview", "nvidia/nvidia/nemotron-3-ultra-550b-a55b", "google/gemini-3.6-flash"],
   "fr-vision": ["nvidia/nvidia/nemotron-3.5-super-vl-120b-a12b", "openrouter/nvidia/nemotron-3.5-super-vl:free", "google/gemini-3.5-flash-lite"],
 };
