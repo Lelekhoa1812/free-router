@@ -105,6 +105,28 @@ describe("admin playground streaming", () => {
     expect(mocks.upstreamChat).not.toHaveBeenCalled();
   });
 
+  it("settles a tool-only response with an estimated output reservation", async () => {
+    const reservation = { id: "playground-tool", target: { provider: "google", group: "default", model: "google/gemini-3.6-flash", scope: "model", limits: { rpm: 5 }, timeZone: "UTC" }, estimate: 10, mode: "enforce", keys: ["a", "b", "c", "d"], resetAt: new Date(), minuteResetSeconds: 60, dayResetSeconds: 60, dayTtl: 3600 };
+    mocks.reserveQuota.mockResolvedValue({ allowed: true, reservation });
+    mocks.upstreamChat.mockResolvedValue(new Response([
+      `data: ${JSON.stringify({ choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: "call_1", type: "function", function: { name: "lookup", arguments: "{\"query\":\"a long tool argument payload\"}" } }] }, finish_reason: null }] })}\n\n`,
+      `data: ${JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }] })}\n\n`,
+      "data: [DONE]\n\n",
+    ].join(""), { status: 200, headers: { "content-type": "text/event-stream" } }));
+
+    const response = await POST(new Request("https://freerouter.test/api/admin/playground", {
+      method: "POST", headers: { origin: "https://freerouter.test", "content-type": "application/json" },
+      body: JSON.stringify({ model: "google/gemini-3.6-flash", messages: [{ role: "user", content: "Use the lookup tool" }] }),
+    }));
+
+    const events = await readEvents(response);
+    expect(events.find((entry) => entry.event === "complete")?.data.toolCalls).toHaveLength(1);
+    expect(mocks.settleQuota).toHaveBeenCalledWith(reservation, expect.objectContaining({ outcome: "completed" }));
+    const usage = mocks.settleQuota.mock.calls[0][1].usage;
+    expect(usage.source).toBe("estimated");
+    expect(usage.output).toBeGreaterThan(0);
+  });
+
   it("does not label a truncated upstream stream as complete", async () => {
     mocks.upstreamChat.mockResolvedValue(new Response(
       `data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: "partial" }, finish_reason: null }] })}\n\n`,

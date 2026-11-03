@@ -70,6 +70,7 @@ export async function POST(request: Request) {
             let quotaReservation: QuotaReservation | undefined;
             let attemptUsage: any;
             let attemptText = "";
+            let attemptTools: any;
             let attemptOutcome: "completed" | "failed" | "cancelled" | "pre_dispatch" = "failed";
             try {
               const admission = await checkAdmission(scopes, lease);
@@ -128,6 +129,7 @@ export async function POST(request: Request) {
                   } catch { /* Ignore malformed upstream fragments; the public gateway owns strict parsing. */ }
                 }
               }
+              attemptTools = [...tools.values()];
               await reader.cancel().catch(() => undefined);
               await releaseAdmission(scopes, lease);
               reserved = false;
@@ -169,7 +171,7 @@ export async function POST(request: Request) {
               attemptOutcome = aborter.signal.aborted ? "cancelled" : "failed";
               failure = error instanceof Error ? error.message : "Provider request failed.";
             } finally {
-              if (quotaReservation) { const usage = attemptUsage || attemptText ? resolveUsage(attemptUsage, promptTokens, attemptText) : undefined; await settleQuota(quotaReservation, { outcome: attemptOutcome, usage }).catch(() => undefined); quotaReservation = undefined; }
+              if (quotaReservation) { const usage = attemptUsage || attemptText || attemptTools?.length ? resolveUsage(attemptUsage, promptTokens, attemptText, attemptTools) : undefined; await settleQuota(quotaReservation, { outcome: attemptOutcome, usage }).catch(() => undefined); quotaReservation = undefined; }
               if (reserved) await releaseAdmission(scopes, lease).catch(() => undefined);
             }
           }

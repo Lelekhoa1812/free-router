@@ -212,7 +212,7 @@ function streamChatResponse(args:{request:Request;rid:string;input:CanonicalChat
                 await db.collection("requests").updateOne({requestId:rid},{$set:{status:"retrying",[`attempts.${dispatched-1}.status`]:"failed",[`attempts.${dispatched-1}.failure`]:reason}}).catch(()=>undefined);
               }finally{
                 if(activeReader){await activeReader.cancel().catch(()=>undefined);activeReader=undefined;}
-                if(activeQuota){const usage=attemptUsage||attemptContent?resolveUsage(attemptUsage,promptTokens,attemptContent,attemptTools):undefined;await settleQuota(activeQuota,{outcome:attemptOutcome,usage}).catch(()=>undefined);activeQuota=undefined;}
+                if(activeQuota){const usage=attemptUsage||attemptContent||attemptTools?.length?resolveUsage(attemptUsage,promptTokens,attemptContent,attemptTools):undefined;await settleQuota(activeQuota,{outcome:attemptOutcome,usage}).catch(()=>undefined);activeQuota=undefined;}
                 if(activeScopes&&activeLease){await releaseAdmission(activeScopes,activeLease).catch(()=>undefined);activeScopes=undefined;activeLease=undefined;}
               }
               if(!alias)break;
@@ -232,7 +232,7 @@ function streamChatResponse(args:{request:Request;rid:string;input:CanonicalChat
         }finally{close();}
       })();
     },
-    async cancel(){cancelled=true;aborter.abort(new Error("client_disconnected"));if(heartbeat)clearInterval(heartbeat);if(deadline)clearTimeout(deadline);request.signal.removeEventListener("abort",onRequestAbort);await activeReader?.cancel().catch(()=>undefined);if(activeQuota){const usage=attemptUsage||attemptContent?resolveUsage(attemptUsage,promptTokens,attemptContent,attemptTools):undefined;await settleQuota(activeQuota,{outcome:"cancelled",usage}).catch(()=>undefined);activeQuota=undefined;}if(activeScopes&&activeLease)await releaseAdmission(activeScopes,activeLease).catch(()=>undefined);},
+    async cancel(){cancelled=true;aborter.abort(new Error("client_disconnected"));if(heartbeat)clearInterval(heartbeat);if(deadline)clearTimeout(deadline);request.signal.removeEventListener("abort",onRequestAbort);await activeReader?.cancel().catch(()=>undefined);if(activeQuota){const usage=attemptUsage||attemptContent||attemptTools?.length?resolveUsage(attemptUsage,promptTokens,attemptContent,attemptTools):undefined;await settleQuota(activeQuota,{outcome:"cancelled",usage}).catch(()=>undefined);activeQuota=undefined;}if(activeScopes&&activeLease)await releaseAdmission(activeScopes,activeLease).catch(()=>undefined);},
   });
   return new Response(stream,{headers});
 }
@@ -319,7 +319,7 @@ export async function POST(request: Request) {
       } catch (e) { attemptOutcome=request.signal.aborted?"cancelled":"failed"; if (admitted) await releaseAdmission(scopes, lease).catch(() => undefined); failures.push(verdictFor(null,e instanceof Error ? e.name : "error")); }
       finally {
         if (admitted) { await releaseAdmission(scopes, lease).catch(() => undefined); admitted = false; }
-        if (quotaReservation) { const usage=attemptUsage||attemptContent?resolveUsage(attemptUsage,promptTokens,attemptContent,attemptTools):undefined; await settleQuota(quotaReservation,{outcome:attemptOutcome,usage}).catch(()=>undefined); quotaReservation=undefined; }
+        if (quotaReservation) { const usage=attemptUsage||attemptContent||attemptTools?.length?resolveUsage(attemptUsage,promptTokens,attemptContent,attemptTools):undefined; await settleQuota(quotaReservation,{outcome:attemptOutcome,usage}).catch(()=>undefined); quotaReservation=undefined; }
       }
     }
     if (!alias||dispatched>=3) break;
