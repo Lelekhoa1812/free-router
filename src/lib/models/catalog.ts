@@ -53,10 +53,42 @@ export const MODEL_CATALOG: ModelProfile[] = rows.map(([provider, upstream, labe
 }));
 
 export const ALIASES: Record<string, string[]> = {
-  "fr-fast": ["nvidia/poolside/laguna-xs-2.1", "google/gemini-3.5-flash-lite"],
-  "fr-code": ["nvidia/poolside/laguna-xs-2.1", "openrouter/cohere/north-mini-code:free", "google/gemini-3.5-flash"],
-  "fr-quality": ["nvidia/deepseek-ai/deepseek-v4.1-flash", "nvidia/stepfun-ai/step-5-preview", "nvidia/nvidia/nemotron-3-ultra-550b-a55b", "google/gemini-3.6-flash"],
-  "fr-vision": ["nvidia/nvidia/nemotron-3.5-super-vl-120b-a12b", "openrouter/nvidia/nemotron-3.5-super-vl:free", "google/gemini-3.5-flash-lite"],
+  // Keep every ready text model reachable from at least one category. fr-auto
+  // resolves to one of these tiers after its deterministic/optional Jev choice.
+  "fr-fast": [
+    "nvidia/poolside/laguna-xs-2.1",
+    "google/gemini-3.1-flash-lite-preview",
+    "google/gemini-3.1-flash-lite",
+    "google/gemini-3.5-flash-lite",
+    "nvidia/nvidia/nemotron-3.5-super-vl-120b-a12b",
+    "nvidia/nvidia/nemotron-3-ultra-550b-a55b",
+    "openrouter/nvidia/nemotron-3.5-super-vl:free",
+    "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+  ],
+  "fr-code": [
+    "nvidia/poolside/laguna-xs-2.1",
+    "openrouter/cohere/north-mini-code:free",
+    "google/gemini-3.5-flash",
+    "google/gemini-3.1-flash-lite",
+    "google/gemini-3.5-flash-lite",
+    "openrouter/dots-studio/dots-3-note-preview:free",
+    "nvidia/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+    "openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+    "matilda/matilda",
+  ],
+  "fr-quality": [
+    "nvidia/nvidia/nemotron-3-ultra-550b-a55b",
+    "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+    "google/gemini-3.6-flash",
+    "openrouter/dots-studio/dots-3-note-preview:free",
+    "nvidia/nvidia/nemotron-3.5-super-vl-120b-a12b",
+    "openrouter/nvidia/nemotron-3.5-super-vl:free",
+    "nvidia/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+    "openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+    "matilda/matilda",
+  ],
+  // Vision is restricted to bindings whose image request was explicitly verified.
+  "fr-vision": ["openrouter/nvidia/nemotron-3.5-super-vl:free", "google/gemini-3.5-flash-lite"],
 };
 
 export const MODEL_BY_ID = new Map(MODEL_CATALOG.map((m) => [m.id, m]));

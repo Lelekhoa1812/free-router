@@ -1,6 +1,6 @@
 # Quota routing
 
-Last reviewed: 3 November 2026.
+Last reviewed: 4 November 2026.
 
 FreeRouter keeps a local quota ledger in Upstash Redis. It estimates each request's token cost, reserves that estimate atomically, and settles the reservation from provider-reported usage when the response completes. The ledger is a gateway admission layer; it is not a live feed from Google, NVIDIA, OpenRouter, Matilda, ZenMux, or OrcaRouter.
 
@@ -15,6 +15,14 @@ Set `QUOTA_MODE` to one of:
 | `enforce` | A request that would exceed a configured request or token window is rejected with HTTP 429, code `quota_exhausted`, and `Retry-After`. |
 
 An invalid `QUOTA_MODE` produces a configuration warning and leaves the mode from `QUOTA_CONFIG_JSON`, or `observe` when that is absent. A malformed `QUOTA_CONFIG_JSON` falls back to safe defaults in observe mode. In `enforce`, an invalid configuration fails closed: the request is not sent upstream.
+
+## Router groups
+
+The public aliases are ordered fallback tiers in `src/lib/models/catalog.ts`. `fr-fast`, `fr-code`, `fr-quality`, and `fr-vision` each include the currently ready models appropriate to that route. `fr-auto` first chooses one of those categories (using deterministic rules unless the optional Jev classifier is enabled), then uses that category's tier. A model may appear in multiple groups so it remains available for different request types.
+
+At request time, the gateway removes candidates that are not ready, lack a passed text probe, have no healthy configured credential, or do not satisfy the request's verified tool, schema, reasoning, or vision requirements. Alias order is preference, not a promise that every candidate can serve every request. In particular, `fr-vision` contains only models with a passed vision probe; a model name containing “VL” is not enough evidence to route images to it.
+
+The catalog tests require every ready text model to appear in at least one Auto category, require each category to retain a routable catalog candidate, and ensure every vision tier member has a passed vision capability. Experimental and unavailable models remain out of these groups until their readiness status changes through verified evidence.
 
 ## Configuration
 
