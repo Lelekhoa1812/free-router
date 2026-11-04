@@ -57,7 +57,7 @@ try {
   const login = await request('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(loginBody) });
   if (!login.ok) throw new Error(`Admin login failed (${login.status}); verify that the configured smoke email is authorized and the local MongoDB credentials match this deployment.`);
   cookie = (login.headers.getSetCookie?.() || [login.headers.get('set-cookie') || '']).map((x) => x.split(';')[0]).join('; ');
-  const create = await request('/api/admin/keys', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: `deployed-smoke-${Date.now()}`, description: 'Temporary automated deployment verification', scopes: ['chat', 'responses', 'decisions'], models: ['*'] }) });
+  const create = await request('/api/admin/keys', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: `deployed-smoke-${Date.now()}`, description: 'Temporary automated deployment verification', scopes: ['chat', 'responses', 'decisions', 'embeddings'], models: ['*'] }) });
   if (!create.ok) throw new Error(`Temporary client-key creation failed (${create.status}).`);
   const issued = await create.json(); clientKeyId = issued.id; apiKey = issued.key;
   const api = new OpenAI({ apiKey, baseURL: `${base}/v1`, maxRetries: 0, timeout: 300000 });
@@ -90,6 +90,49 @@ try {
     record('MongoDB provider slot inventory', 'passed', summary);
   }
   record('OpenAI SDK models.list', modelList.data.length ? 'passed' : 'failed', `${modelList.data.length} visible models`);
+
+  try {
+    const discovery = await fetch(`${base}/v1/models?type=embedding`, { headers: { authorization: `Bearer ${apiKey}` } });
+    const body = await discovery.json();
+    if (!discovery.ok) throw new Error(`HTTP ${discovery.status}`);
+    const embeddingModels = body.data || [];
+    record('OpenAI-compatible embedding discovery', embeddingModels.length ? 'passed' : 'failed', `${embeddingModels.length} allowed models`);
+    const chosen = process.env.SMOKE_EMBEDDING_IDS?.split(',').map((value) => value.trim()).filter(Boolean);
+    const modelsToTest = chosen?.length ? embeddingModels.filter((model) => chosen.includes(model.id)) : embeddingModels;
+    if (chosen?.some((id) => !embeddingModels.some((model) => model.id === id))) throw new Error('An explicitly selected embedding model was not discoverable');
+    for (const model of modelsToTest) {
+      const started = Date.now();
+      try {
+        const result = await api.embeddings.create({
+          model: model.id,
+          input: ['FreeRouter embedding endpoint smoke test.'],
+          ...(model.input_type_required ? { input_type: 'query' } : {}),
+        }, { maxRetries: 0, timeout: 280000 });
+        const vector = result.data?.[0]?.embedding;
+        const dimensions = Array.isArray(vector) ? vector.length : 0;
+        record(`OpenAI SDK embeddings ${model.id}`, dimensions > 0 && result.data?.[0]?.index === 0 ? 'passed' : 'failed', `${Date.now() - started} ms; dimensions=${dimensions}; usage=${result.usage?.total_tokens ?? 'not reported'}`);
+      } catch (error) {
+        record(`OpenAI SDK embeddings ${model.id}`, 'failed', `HTTP ${error?.status || 'network'}${error?.code ? ` ${error.code}` : ''}`);
+      }
+    }
+  } catch (error) { record('OpenAI-compatible embedding discovery', 'failed', error?.message || 'discovery failed'); }
+
+  try {
+    const modelsResponse = await request('/api/admin/playground/embedding/models');
+    const listed = await modelsResponse.json();
+    if (!modelsResponse.ok || !(listed.data || []).length) throw new Error(`HTTP ${modelsResponse.status}; no model available`);
+    const model = listed.data[0];
+    const response = await request('/api/admin/playground/embedding', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: model.id, input: 'Admin Playground embedding smoke test.', ...(model.input_type_required ? { input_type: 'query' } : {}) }) });
+    const result = await response.json();
+    const dimensions = result.data?.[0]?.embedding?.length || 0;
+    record('Admin Playground embedding proxy', response.ok && dimensions > 0 ? 'passed' : 'failed', `HTTP ${response.status}; model=${model.id}; dimensions=${dimensions}`);
+  } catch (error) { record('Admin Playground embedding proxy', 'failed', error?.message || 'request failed'); }
+
+  try {
+    const response = await request('/api/admin/playground/decision', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ protocol: 'decisions', model: 'jev/jev-latest', body: { model: 'jev/jev-latest', input: 'A smoke test request for the admin playground.', questions: [{ type: 'predicate', name: 'valid', instructions: 'Is this a valid smoke test?' }] } }) });
+    const result = await response.json();
+    record('Admin Playground Decisions proxy', response.ok && Array.isArray(result.answers) ? 'passed' : 'failed', `HTTP ${response.status}; answers=${result.answers?.length ?? 0}`);
+  } catch (error) { record('Admin Playground Decisions proxy', 'failed', error?.message || 'request failed'); }
 
   const exactModels = modelList.data.filter((m) => ['google', 'nvidia', 'openrouter', 'matilda'].includes(m.owned_by) && m.id.includes('/'));
   const selectedModels = process.env.SMOKE_MODEL_IDS?.split(',').map((value) => value.trim()).filter(Boolean);

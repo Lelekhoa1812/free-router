@@ -302,13 +302,14 @@ export function mapUpstreamError(status: number, payload: any) {
   };
 }
 
-export async function callSystemOne(body: unknown, headers?: HeadersInit, timeoutMs = 90000) {
+export async function callSystemOne(body: unknown, headers?: HeadersInit, timeoutMs = 90000, parentSignal?: AbortSignal) {
   if (!env.jevKey) throw new Error("JEV_TYPESAFE_API_KEY is not configured");
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
   return fetch("https://api.typesafe.ai/v1/systemone", {
     method: "POST",
     headers: { authorization: `Bearer ${env.jevKey}`, "content-type": "application/json", ...(headers || {}) },
     body: JSON.stringify(body),
     cache: "no-store",
-    signal: AbortSignal.timeout(timeoutMs),
+    signal: parentSignal ? AbortSignal.any([timeoutSignal, parentSignal]) : timeoutSignal,
   });
 }

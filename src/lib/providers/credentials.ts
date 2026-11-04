@@ -49,6 +49,7 @@ export async function saveProviderCredential(input: { provider: ProviderId; slot
     await Promise.all([
       db.collection("credential_health").deleteOne({ provider: input.provider, fingerprint: existing.fingerprint }),
       db.collection("model_bindings").deleteMany({ provider: input.provider, fingerprint: existing.fingerprint }),
+      db.collection("embedding_bindings").deleteMany({ provider: input.provider, fingerprint: existing.fingerprint }),
     ]);
   }
   const encryptedSecret = encryptJson({ secret: input.secret }, aad(input.provider, input.slot));
@@ -70,6 +71,7 @@ export async function removeProviderCredential(provider: ProviderId, slot: numbe
     db.collection("provider_credentials").deleteOne({ provider, slot }),
     db.collection("credential_health").deleteOne({ provider, fingerprint: existing.fingerprint }),
     db.collection("model_bindings").deleteMany({ provider, fingerprint: existing.fingerprint }),
+    db.collection("embedding_bindings").deleteMany({ provider, fingerprint: existing.fingerprint }),
   ]);
   await db.collection("audit_events").insertOne({ action: "provider_credential_removed", provider, slot, fingerprint: String(existing.fingerprint).slice(0, 10), createdAt: new Date() });
   return true;

@@ -25,6 +25,7 @@ export async function ensureIndexes() {
       db.collection("provider_credentials").createIndex({ provider: 1, slot: 1 }, { unique: true, name: "provider_credential_slot" }),
       db.collection("credential_health").createIndex({ cooldownUntil: 1 }, { name: "credential_health_cooldown" }),
       db.collection("model_bindings").createIndex({ provider:1,model:1,fingerprint:1 },{unique:true,name:"model_binding_key"}),
+      db.collection("embedding_bindings").createIndex({ provider:1,model:1,fingerprint:1 },{unique:true,name:"embedding_binding_key"}),
       db.collection("model_overload_breakers").createIndex({ provider:1,model:1 },{unique:true,name:"model_overload_breaker_key"}),
       db.collection("model_overload_breakers").createIndex({ expiresAt:1 },{expireAfterSeconds:0,name:"model_overload_breaker_ttl"}),
       db.collection("responses").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0, name: "response_ttl" }),

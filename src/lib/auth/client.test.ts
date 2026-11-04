@@ -56,6 +56,15 @@ describe("client key model authority", () => {
     await expect(authenticateClient(request(), "chat", "nvidia/z-ai/glm-5.3-flash")).resolves.toEqual({ error: "model_forbidden" });
   });
 
+  it("accepts one of the requested scopes for shared model discovery", async () => {
+    const dbRecord = { ...record(["*"]), scopes: ["embeddings"] };
+    const { db } = database(dbRecord);
+    mocks.getDb.mockResolvedValue(db);
+
+    await expect(authenticateClient(request(), ["chat", "embeddings"], "google/gemini-embedding-001")).resolves.toHaveProperty("key");
+    await expect(authenticateClient(request(), ["chat", "responses"], "google/gemini-embedding-001")).resolves.toEqual({ error: "insufficient_scope" });
+  });
+
   it("keeps legacy records without a models field unrestricted", async () => {
     const { db } = database(record(undefined));
     mocks.getDb.mockResolvedValue(db);
