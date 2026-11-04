@@ -6,6 +6,11 @@ export interface ModelProfile {
   status: "ready" | "experimental" | "unavailable" | "restricted"; reason?: string;
 }
 
+// Cursor documents 200k tokens as its normal context window. Keep fr-code
+// candidates at or above that limit; Cursor's custom OpenAI-compatible models
+// may otherwise be assigned a larger assumed window than the provider supports.
+export const CURSOR_MIN_CONTEXT = 200_000;
+
 const rows: Array<[Provider,string,string,number|null,number|null,CapabilityState,CapabilityState,CapabilityState,CapabilityState,ModelProfile["latency"],ModelProfile["status"],string?]> = [
   ["google","gemini-3-flash-preview","Gemini 3 Flash Preview",1048576,65536,"passed","passed","passed","unknown","standard","unavailable","Two production-gateway SSE attempts on 3 November 2026 returned upstream_unavailable; excluded from public discovery pending successful retest."],
   ["google","gemini-3.1-flash-lite-preview","Gemini 3.1 Flash-Lite Preview",1048576,65536,"passed","passed","passed","unknown","fast","ready"],
@@ -74,7 +79,6 @@ export const ALIASES: Record<string, string[]> = {
     "openrouter/dots-studio/dots-3-note-preview:free",
     "nvidia/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
     "openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
-    "matilda/matilda",
   ],
   "fr-quality": [
     "nvidia/nvidia/nemotron-3-ultra-550b-a55b",

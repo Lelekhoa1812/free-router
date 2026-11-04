@@ -24,6 +24,8 @@ At request time, the gateway removes candidates that are not ready, lack a passe
 
 The catalog tests require every ready text model to appear in at least one Auto category, require each category to retain a routable catalog candidate, and ensure every vision tier member has a passed vision capability. Experimental and unavailable models remain out of these groups until their readiness status changes through verified evidence.
 
+`fr-code` also requires a catalog context window of at least 200,000 tokens, matching Cursor's documented normal context window ([Cursor Models](https://docs.cursor.com/advanced/models)). Cursor's custom OpenAI-compatible models may use an assumed context window that the provider does not support, so this tier excludes providers without a verified context size and models below 200k. Matilda remains available in other applicable tiers; it is excluded from `fr-code` because its gateway request limit is 16,000 characters per message and its token context limit is undocumented.
+
 ## Configuration
 
 `QUOTA_CONFIG_JSON` is optional. Empty values use the defaults below. The top-level object accepts only `mode`, `groups`, and `providers`; unknown properties are rejected.

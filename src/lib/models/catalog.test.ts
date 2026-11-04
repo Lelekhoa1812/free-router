@@ -1,5 +1,5 @@
 import { describe,expect,it } from "vitest";
-import { ALIASES,MODEL_BY_ID,MODEL_CATALOG,publicModels } from "@/lib/models/catalog";
+import { ALIASES,CURSOR_MIN_CONTEXT,MODEL_BY_ID,MODEL_CATALOG,publicModels } from "@/lib/models/catalog";
 describe("model registry",()=>{
   it("keeps every alias binding traceable to an explicit catalog entry",()=>{for(const [alias,ids] of Object.entries(ALIASES)){expect(alias).toMatch(/^fr-/);for(const id of ids)expect(MODEL_BY_ID.has(id),`${alias} -> ${id}`).toBe(true)}});
   it("routes every ready text model through at least one Auto category",()=>{
@@ -13,6 +13,15 @@ describe("model registry",()=>{
   });
   it("keeps vision routing limited to models with a passed vision probe",()=>{
     for(const id of ALIASES["fr-vision"])expect(MODEL_BY_ID.get(id)?.vision,id).toBe("passed");
+  });
+  it("keeps fr-code candidates within Cursor's documented normal context window",()=>{
+    for(const id of ALIASES["fr-code"]){
+      const model=MODEL_BY_ID.get(id)!;
+      expect(model.context,id).not.toBeNull();
+      expect(model.context,id).toBeGreaterThanOrEqual(CURSOR_MIN_CONTEXT);
+    }
+    expect(CURSOR_MIN_CONTEXT).toBe(200_000);
+    expect(ALIASES["fr-code"]).not.toContain("matilda/matilda");
   });
   it("does not publish unavailable, restricted, or experimental candidates",()=>{const listed=new Set(publicModels().map(m=>m.id));for(const model of MODEL_CATALOG.filter(m=>m.status!=="ready"||m.text!=="passed"))expect(listed.has(model.id)).toBe(false)});
   it("keeps Jev out of the default chat model list",()=>{expect(publicModels().some(m=>m.id.startsWith("jev/"))).toBe(false)});
