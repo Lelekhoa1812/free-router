@@ -11,6 +11,7 @@ const providerList = [
   { id: "nvidia", prefix: "NVIDIA_NIM_API_KEY_", label: "NVIDIA NIM", url: "https://integrate.api.nvidia.com/v1/models", header: "authorization", base: "Bearer " },
   { id: "matilda", prefix: "MATILDA_API_KEY_", label: "Matilda (Maincode)", url: "https://matilda.maincode.com/api/v1/models", header: "authorization", base: "Bearer " },
   { id: "mistral", prefix: "MISTRAL_API_KEY_", label: "Mistral AI", url: "https://api.mistral.ai/v1/models", header: "authorization", base: "Bearer " },
+  { id: "tokenharbor", prefix: "TOKENHARBOR_API_KEY_", label: "TokenHarbor", url: "https://tokenharbor.ai/v1/models", header: "authorization", base: "Bearer " },
 ];
 const selectedProvider = process.env.MIGRATE_PROVIDER;
 if (selectedProvider && !providerList.some((provider) => provider.id === selectedProvider)) throw new Error("Unknown MIGRATE_PROVIDER.");

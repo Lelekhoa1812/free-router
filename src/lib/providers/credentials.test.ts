@@ -14,4 +14,15 @@ describe("Mistral credential probe", () => {
     expect(url).toBe("https://api.mistral.ai/v1/models");
     expect((init?.headers as Record<string, string>).authorization).toBe("Bearer test-secret");
   });
+
+  it("checks the TokenHarbor models endpoint with Bearer authentication", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 200 }));
+    const result = await probeProviderCredential("tokenharbor", "test-secret");
+
+    expect(result).toEqual({ status: 200, ok: true });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("https://tokenharbor.ai/v1/models");
+    expect((init?.headers as Record<string, string>).authorization).toBe("Bearer test-secret");
+  });
 });

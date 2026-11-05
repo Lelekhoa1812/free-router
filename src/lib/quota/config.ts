@@ -51,6 +51,7 @@ const PROVIDER_IDS = [
   "zenmux",
   "orcarouter",
   "mistral",
+  "tokenharbor",
 ] as const satisfies readonly Provider[];
 
 const PROVIDER_COUNT = new Map(providers.map((provider) => [provider.id, provider.count]));
@@ -102,6 +103,12 @@ export const DEFAULT_PROVIDER_CONFIG: Record<Provider, QuotaProviderConfig> = {
     timeZone: "UTC",
     // Conservative local guard; operators should configure account and model limits.
     limits: { rpm: 5 },
+  },
+  tokenharbor: {
+    scope: "group",
+    timeZone: "UTC",
+    // Unified free tier guard; operators configure real account bounds.
+    limits: { rpm: 20 },
   },
 };
 

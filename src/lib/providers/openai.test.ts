@@ -1,6 +1,6 @@
 import { describe,expect,it,vi } from "vitest";
 import { translateChatRequest, buildProviderChatBody, completionToSse, upstreamChat } from "@/lib/providers/openai";
-import { MODEL_BY_ID, publicModels, type ModelProfile } from "@/lib/models/catalog";
+import { ALIASES, MODEL_BY_ID, publicModels, type ModelProfile } from "@/lib/models/catalog";
 describe("Chat Completions request validation",()=>{
   it("accepts a minimal OpenAI chat request without changing message order",()=>{const input={model:"fr-code",messages:[{role:"system",content:"You are helpful."},{role:"user",content:"Hello"}],stream:true};expect(translateChatRequest(input)).toMatchObject(input)});
   it("rejects unknown fields instead of silently dropping them",()=>{expect(()=>translateChatRequest({model:"fr-auto",messages:[{role:"user",content:"x"}],logit_bias:{}})).toThrow(/Unsupported request field/)});
@@ -98,5 +98,48 @@ describe("ZenMux and OrcaRouter provider compatibility", () => {
       max_tokens: 100,
       stream: true,
     });
+  });
+});
+
+describe("TokenHarbor provider compatibility", () => {
+  it("registers tokenharbor model profiles", () => {
+    const tokenharbor = MODEL_BY_ID.get("tokenharbor/deepseek-v4-flash:free");
+    expect(tokenharbor).toBeDefined();
+    expect(tokenharbor?.provider).toBe("tokenharbor");
+  });
+
+  it("keeps the unprobed TokenHarbor model out of discovery and router groups", () => {
+    const id = "tokenharbor/deepseek-v4-flash:free";
+    expect(MODEL_BY_ID.get(id)?.status).toBe("experimental");
+    expect(publicModels().map((model) => model.id)).not.toContain(id);
+    expect(Object.values(ALIASES).flat()).not.toContain(id);
+  });
+
+  it("builds standard OpenAI-compatible chat bodies with streaming", () => {
+    const tokenharbor = MODEL_BY_ID.get("tokenharbor/deepseek-v4-flash:free")!;
+    const body = buildProviderChatBody(tokenharbor, {
+      model: tokenharbor.id,
+      messages: [{ role: "user", content: "hello" }],
+      max_completion_tokens: 100,
+    });
+    expect(body).toEqual({
+      model: "deepseek-v4-flash:free",
+      messages: [{ role: "user", content: "hello" }],
+      max_tokens: 100,
+      stream: true,
+    });
+  });
+
+  it("uses the TokenHarbor v1 chat endpoint, Bearer auth and streamed request body", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("", { status: 200 }));
+    const profile = MODEL_BY_ID.get("tokenharbor/deepseek-v4-flash:free")!;
+    try {
+      await upstreamChat(profile, { provider: "tokenharbor", slot: 1, label: "TokenHarbor key", secret: "test-secret", fingerprint: "fp" }, { model: profile.id, messages: [{ role: "user", content: "hello" }] });
+      expect(fetchMock).toHaveBeenCalledOnce();
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(url).toBe("https://tokenharbor.ai/v1/chat/completions");
+      expect((init?.headers as Record<string, string>).authorization).toBe("Bearer test-secret");
+      expect(JSON.parse(String(init?.body))).toEqual({ model: "deepseek-v4-flash:free", messages: [{ role: "user", content: "hello" }], stream: true });
+    } finally { fetchMock.mockRestore(); }
   });
 });
