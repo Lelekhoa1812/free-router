@@ -23,6 +23,10 @@ describe("model registry",()=>{
     expect(CURSOR_MIN_CONTEXT).toBe(200_000);
     expect(ALIASES["fr-code"]).not.toContain("matilda/matilda");
   });
+  it("keeps Mistral's incompletely benchmarked small models out of fr-code",()=>{
+    expect(ALIASES["fr-code"]).not.toContain("mistral/ministral-8b-2512");
+    expect(ALIASES["fr-code"]).not.toContain("mistral/ministral-14b-2512");
+  });
   it("does not publish unavailable, restricted, or experimental candidates",()=>{const listed=new Set(publicModels().map(m=>m.id));for(const model of MODEL_CATALOG.filter(m=>m.status!=="ready"||m.text!=="passed"))expect(listed.has(model.id)).toBe(false)});
   it("keeps Jev out of the default chat model list",()=>{expect(publicModels().some(m=>m.id.startsWith("jev/"))).toBe(false)});
   it("keeps explicitly removed models out of the registry and routing aliases",()=>{

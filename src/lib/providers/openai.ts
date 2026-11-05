@@ -50,6 +50,25 @@ export function buildProviderChatBody(profile: ModelProfile, body: CanonicalChat
     ? { reasoning_effort: "low" }
     : {};
   if (profile.provider === "matilda") return buildMatildaBody(profile, body, outputLimit);
+  if (profile.provider === "mistral") {
+    const messages = providerFields.messages as any[];
+    const hasDeveloper = messages.some((message) => message?.role === "developer");
+    const hasSystem = messages.some((message) => message?.role === "system");
+    if (hasDeveloper && hasSystem) {
+      throw new ProviderRequestError(
+        "Mistral cannot preserve separate system and developer instruction priority",
+        400,
+        "unsupported_parameter",
+      );
+    }
+    // Mistral rejects `developer` on some model families. A developer-only
+    // request is mapped to system as the closest supported role; this elevates
+    // its priority, so requests that also have a system role are rejected above.
+    const mistralMessages = hasDeveloper
+      ? messages.map((message) => message?.role === "developer" ? { ...message, role: "system" } : message)
+      : messages;
+    return { ...providerFields, ...glmDefaults, ...(outputLimit === undefined ? {} : { max_tokens: outputLimit }), model: profile.upstream, messages: mistralMessages, stream: true };
+  }
   return { ...providerFields, ...glmDefaults, ...(outputLimit === undefined ? {} : { max_tokens: outputLimit }), model: profile.upstream, stream: true };
 }
 

@@ -23,7 +23,7 @@ describe("quota configuration", () => {
     const result = loadQuotaConfig();
     expect(result.valid).toBe(true);
     expect(result.config.mode).toBe("observe");
-    expect(result.config.groups).toHaveLength(6);
+    expect(result.config.groups).toHaveLength(7);
     for (const group of result.config.groups) {
       expect(group.slots).toHaveLength(9);
       expect(group.slots[0]).toBe(1);
@@ -32,6 +32,7 @@ describe("quota configuration", () => {
     expect(result.config.providers.google.scope).toBe("model");
     expect(result.config.providers.openrouter.scope).toBe("group");
     expect(result.config.providers.openrouter.limits).toMatchObject({ rpm: 20, rpd: 50 });
+    expect(result.config.providers.mistral).toMatchObject({ scope: "model", limits: { rpm: 5 } });
   });
 
   it("merges custom groups and limits, filling unassigned slots safely", () => {

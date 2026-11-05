@@ -78,6 +78,9 @@ A group is a quota boundary, not a UI label. Put keys that share a real provider
 | NVIDIA NIM | `model` | `UTC` | `rpm: 40` |
 | OpenRouter | `group` | `UTC` | `rpm: 20`, `rpd: 50` |
 | Matilda (Maincode) | `model` | `UTC` | `rpm: 5` |
+| Mistral AI | `model` | `UTC` | `rpm: 5` |
+
+Mistral's [usage and limits](https://docs.mistral.ai/admin/billing-usage/usage-limits) are set per organization and model; inspect the account's current limits rather than assuming that separate keys have independent quotas. Free mode offers included usage for evaluation, but the public documentation does not establish a universal credit amount or per-model allowance. The five-RPM FreeRouter default is a local guard, not a provider promise, and the default `observe` mode does not enforce it. Configure the actual limits and use `enforce` if local admission is required. A 429 was observed during testing without a retry header.
 
 ## Accounting
 

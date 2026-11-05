@@ -87,6 +87,8 @@ tr:last-child td { border-bottom: none; }
 .provider-icon.nvidia{width:86px;height:30px;border:0;border-radius:0;background:transparent}
 .provider-icon.nvidia img{width:100%;height:16px;object-fit:contain}
 .provider-icon.openrouter img{width:21px;height:16px}
+.provider-icon.mistral{border:0;border-radius:0;background:transparent}
+.provider-icon.mistral img{width:20px;height:20px}
 .provider-icon.zenmux,.provider-icon.orcarouter{background:#fff;border-color:#fff}
 .provider-icon.zenmux img,.provider-icon.orcarouter img{width:21px;height:21px}
 .storage-capacity-actions{display:flex;align-items:center;gap:8px}.storage-refresh{display:inline-flex;align-items:center;gap:6px;padding:6px 9px;font-size:9px;white-space:nowrap}.storage-refresh:disabled{opacity:.65;cursor:wait}.spin-icon{animation:spin .9s linear infinite}

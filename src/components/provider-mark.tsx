@@ -5,6 +5,7 @@ const PROVIDER_LOGOS = {
   matilda: { src: "/brand/providers/matilda.svg", width: 118, height: 118 },
   zenmux: { src: "/brand/providers/zenmux.svg", width: 160, height: 160 },
   orcarouter: { src: "/brand/providers/orcarouter.png", width: 180, height: 180 },
+  mistral: { src: "/brand/providers/mistral.svg", width: 48, height: 48 },
 } as const;
 
 type ProviderId = keyof typeof PROVIDER_LOGOS;

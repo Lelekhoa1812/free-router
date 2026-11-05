@@ -33,6 +33,14 @@ async function classifyAuto(body:CanonicalChat,keyId:string,allowed:boolean) {
 }
 function supportsReasoningEffort(profile:ModelProfile){return ["nvidia/z-ai/glm-5.3-flash","nvidia/deepseek-ai/deepseek-v4.1-flash","google/gemini-3.6-flash"].includes(profile.id);}
 function supportsRequest(profile: ModelProfile, body: CanonicalChat) {
+  // Some Mistral model families reject developer messages. The provider body
+  // builder can translate developer-only requests, but cannot preserve the
+  // priority distinction when system and developer messages both appear.
+  if (profile.provider === "mistral") {
+    const hasDeveloper = body.messages.some((message: any) => message?.role === "developer");
+    const hasSystem = body.messages.some((message: any) => message?.role === "system");
+    if (hasDeveloper && hasSystem) return false;
+  }
   // Matilda rejects sampling controls and native tool fields. Fail explicitly
   // rather than silently changing a caller's semantics.
   if (profile.provider === "matilda") {

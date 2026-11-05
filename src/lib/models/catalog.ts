@@ -1,4 +1,4 @@
-export type Provider = "google" | "nvidia" | "openrouter" | "matilda" | "zenmux" | "orcarouter";
+export type Provider = "google" | "nvidia" | "openrouter" | "matilda" | "zenmux" | "orcarouter" | "mistral";
 export type CapabilityState = "passed" | "failed" | "unknown" | "unsupported";
 export interface ModelProfile {
   id: string; provider: Provider; upstream: string; label: string; context: number | null; maxOutput: number | null;
@@ -49,6 +49,9 @@ const rows: Array<[Provider,string,string,number|null,number|null,CapabilityStat
   ["openrouter","liquid/lfm-2.5-2.6b:free","Liquid LFM 2.5 2.6B",65536,8192,"unknown","unknown","unknown","unknown","unknown","unavailable","Excluded: below the modern coding/general quality threshold."],
   ["openrouter","nvidia/nemotron-3.5-content-safety:free","Nemotron 3.5 Content Safety",128000,8192,"unknown","unknown","unknown","unknown","unknown","unavailable","Excluded: specialized content-safety model."],
   ["matilda","matilda","Matilda",null,null,"passed","passed","passed","unsupported","standard","ready","Direct OpenAI SDK probes on 4 November 2026 passed model discovery, streamed chat, JSON mode, strict JSON Schema, system/developer messages, streamed native tools and tool continuation. Inline image_url returned HTTP 400 and remains unsupported. Deployed gateway certification pending."],
+  ["mistral","ministral-8b-2512","Ministral 3 8B",262144,null,"passed","passed","passed","passed","fast","ready","Direct OpenAI SDK probes on 5 November 2026 passed streaming, tools and continuation, strict JSON Schema and a simple vision task. A two-task coding sample was incomplete; excluded from fr-code. Gateway and Cursor acceptance remain pending."],
+  ["mistral","ministral-14b-2512","Ministral 3 14B",262144,null,"passed","passed","passed","passed","fast","ready","Direct OpenAI SDK probes on 5 November 2026 passed streaming, tools and continuation, strict JSON Schema and a simple vision task. A two-task coding sample was incomplete; excluded from fr-code. Gateway and Cursor acceptance remain pending."],
+  ["mistral","mistral-small-2603","Mistral Small 4",262144,null,"unknown","unknown","unknown","unknown","unknown","experimental","Listed by Mistral on 5 November 2026 but the attempted direct call returned HTTP 429; live capabilities remain unverified."],
   ["zenmux","deepseek/deepseek-v4-flash","DeepSeek V4 Flash",1048576,32768,"unknown","unknown","unknown","unknown","fast","experimental","Configured provider path; live credential probe and acceptance pending."],
   ["orcarouter","orcarouter/free","OrcaRouter Free Router",262144,32768,"unknown","unknown","unknown","unknown","fast","experimental","Configured provider path; live credential probe and acceptance pending."],
 ];
@@ -69,6 +72,8 @@ export const ALIASES: Record<string, string[]> = {
     "nvidia/nvidia/nemotron-3-ultra-550b-a55b",
     "openrouter/nvidia/nemotron-3.5-super-vl:free",
     "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+    "mistral/ministral-8b-2512",
+    "mistral/ministral-14b-2512",
   ],
   "fr-code": [
     "nvidia/poolside/laguna-xs-2.1",
@@ -92,7 +97,7 @@ export const ALIASES: Record<string, string[]> = {
     "matilda/matilda",
   ],
   // Vision is restricted to bindings whose image request was explicitly verified.
-  "fr-vision": ["openrouter/nvidia/nemotron-3.5-super-vl:free", "google/gemini-3.5-flash-lite"],
+  "fr-vision": ["openrouter/nvidia/nemotron-3.5-super-vl:free", "google/gemini-3.5-flash-lite", "mistral/ministral-8b-2512", "mistral/ministral-14b-2512"],
 };
 
 export const MODEL_BY_ID = new Map(MODEL_CATALOG.map((m) => [m.id, m]));

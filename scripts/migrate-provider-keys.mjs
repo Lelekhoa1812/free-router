@@ -10,7 +10,11 @@ const providerList = [
   { id: "google", prefix: "GEMINI_API_KEY_", label: "Google AI Studio", url: "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1", header: "x-goog-api-key", base: "" },
   { id: "nvidia", prefix: "NVIDIA_NIM_API_KEY_", label: "NVIDIA NIM", url: "https://integrate.api.nvidia.com/v1/models", header: "authorization", base: "Bearer " },
   { id: "matilda", prefix: "MATILDA_API_KEY_", label: "Matilda (Maincode)", url: "https://matilda.maincode.com/api/v1/models", header: "authorization", base: "Bearer " },
+  { id: "mistral", prefix: "MISTRAL_API_KEY_", label: "Mistral AI", url: "https://api.mistral.ai/v1/models", header: "authorization", base: "Bearer " },
 ];
+const selectedProvider = process.env.MIGRATE_PROVIDER;
+if (selectedProvider && !providerList.some((provider) => provider.id === selectedProvider)) throw new Error("Unknown MIGRATE_PROVIDER.");
+const selectedProviders = selectedProvider ? providerList.filter((provider) => provider.id === selectedProvider) : providerList;
 const encryptionSecret = process.env.STATE_ENCRYPTION_KEY;
 if (!process.env.MONGO_DB_CONNECTION_STRING || !encryptionSecret || Buffer.byteLength(encryptionSecret) < 32) throw new Error("MongoDB and a 32-byte STATE_ENCRYPTION_KEY are required.");
 
@@ -29,11 +33,14 @@ await client.connect();
 try {
   const db = client.db(process.env.MONGODB_DB || "freerouter");
   await db.collection("provider_credentials").createIndex({ provider: 1, slot: 1 }, { unique: true, name: "provider_credential_slot" });
-  let healthy = 0, invalid = 0, skipped = 0;
-  for (const provider of providerList) {
+  let healthy = 0, invalid = 0, removed = 0, skipped = 0, conflicts = 0;
+  for (const provider of selectedProviders) {
     for (let slot = 1; slot <= 9; slot++) {
       const secret = process.env[`${provider.prefix}${slot}`]?.trim();
       if (!secret) { skipped++; continue; }
+      const keyFingerprint = createHash("sha256").update(secret).digest("hex");
+      const existing = await db.collection("provider_credentials").findOne({ provider: provider.id, slot });
+      if (existing && existing.fingerprint !== keyFingerprint) { conflicts++; continue; }
       let status;
       try {
         const response = await fetch(provider.url, { headers: { [provider.header]: `${provider.base}${secret}` }, signal: AbortSignal.timeout(12000), cache: "no-store" });
@@ -41,14 +48,22 @@ try {
         await response.body?.cancel();
       } catch { skipped++; continue; }
       const now = new Date();
-      const keyFingerprint = createHash("sha256").update(secret).digest("hex");
       if (status >= 200 && status < 300) {
-        await db.collection("provider_credentials").updateOne({ provider: provider.id, slot }, { $set: { provider: provider.id, slot, label: `${provider.label} key ${slot}`, fingerprint: keyFingerprint, encryptedSecret: encrypt(secret, provider.id, slot), updatedAt: now, probeStatus: status }, $setOnInsert: { createdAt: now } }, { upsert: true });
+        try {
+          await db.collection("provider_credentials").updateOne({ provider: provider.id, slot, fingerprint: keyFingerprint }, { $set: { provider: provider.id, slot, label: `${provider.label} key ${slot}`, fingerprint: keyFingerprint, encryptedSecret: encrypt(secret, provider.id, slot), updatedAt: now, probeStatus: status }, $setOnInsert: { createdAt: now } }, { upsert: true });
+        } catch (error) {
+          if (error?.code === 11000) { conflicts++; continue; }
+          throw error;
+        }
         await db.collection("credential_health").updateOne({ provider: provider.id, fingerprint: keyFingerprint }, { $set: { authStatus: "healthy", lastRetestAt: now, lastErrorStatus: null, updatedAt: now } }, { upsert: true });
         healthy++;
       } else if (status === 401) {
-        const existing = await db.collection("provider_credentials").findOne({ provider: provider.id, slot });
-        if (existing?.fingerprint === keyFingerprint) await db.collection("provider_credentials").deleteOne({ provider: provider.id, slot, fingerprint: keyFingerprint });
+        // Seeding Mistral must not remove an existing registered credential.
+        if (provider.id === "mistral") { invalid++; continue; }
+        if (existing?.fingerprint === keyFingerprint) {
+          const result = await db.collection("provider_credentials").deleteOne({ provider: provider.id, slot, fingerprint: keyFingerprint });
+          removed += result.deletedCount;
+        }
         await Promise.all([
           ...(existing?.fingerprint === keyFingerprint ? [db.collection("credential_health").deleteOne({ provider: provider.id, fingerprint: keyFingerprint }), db.collection("model_bindings").deleteMany({ provider: provider.id, fingerprint: keyFingerprint })] : []),
           db.collection("credential_health").deleteOne({ provider: provider.id, fingerprint: keyFingerprint }),
@@ -58,5 +73,5 @@ try {
       } else skipped++;
     }
   }
-  console.log(JSON.stringify({ migratedHealthy: healthy, removedInvalid: invalid, skipped, providers: providerList.map((p) => p.id) }));
+  console.log(JSON.stringify({ migratedHealthy: healthy, invalid, removedInvalid: removed, skipped, conflicts, providers: selectedProviders.map((p) => p.id) }));
 } finally { await client.close(); }

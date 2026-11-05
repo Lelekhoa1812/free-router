@@ -12,6 +12,13 @@ vi.mock("@/lib/redis",()=>({checkAdmission:mocks.checkAdmission,releaseAdmission
 vi.mock("@/lib/quota/ledger",async()=>{const actual=await vi.importActual<any>("@/lib/quota/ledger");return{...actual,reserveQuota:mocks.reserveQuota,settleQuota:mocks.settleQuota};});
 
 import { POST } from "./route";
+import { ALIASES, MODEL_BY_ID, type ModelProfile } from "@/lib/models/catalog";
+
+const mistralRoleProbe: ModelProfile = {
+  id: "mistral/mistral-role-probe", provider: "mistral", upstream: "mistral-role-probe", label: "Mistral role probe",
+  context: null, maxOutput: null, text: "passed", tools: "passed", schema: "passed", vision: "unsupported",
+  latency: "standard", status: "ready",
+};
 
 describe("Chat Completions streaming startup",()=>{
   beforeEach(()=>{
@@ -54,6 +61,46 @@ describe("Chat Completions streaming startup",()=>{
     expect(output).toContain("FR_OK");
     expect(output).toContain("data: [DONE]");
     expect(mocks.upstreamChat).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips Mistral for a mixed system/developer alias request and falls back to another provider",async()=>{
+    const oldAlias=ALIASES["fr-code"];
+    MODEL_BY_ID.set(mistralRoleProbe.id,mistralRoleProbe);
+    ALIASES["fr-code"]=[mistralRoleProbe.id,"google/gemini-3.6-flash"];
+    mocks.getProviderCredentials.mockReturnValue([{provider:"google",slot:1,secret:"test-secret",fingerprint:"test-fingerprint"}]);
+    mocks.upstreamChat.mockResolvedValue(new Response([
+      `data: ${JSON.stringify({choices:[{index:0,delta:{content:"FR_OK"},finish_reason:null}]})}\n\n`,
+      `data: ${JSON.stringify({choices:[{index:0,delta:{},finish_reason:"stop"}]})}\n\n`,
+      "data: [DONE]\n\n",
+    ].join(""),{status:200,headers:{"content-type":"text/event-stream"}}));
+    try {
+      const response=await POST(new Request("https://freerouter.test/v1/chat/completions",{
+        method:"POST",headers:{"content-type":"application/json"},
+        body:JSON.stringify({model:"fr-code",messages:[{role:"system",content:"System"},{role:"developer",content:"Developer"},{role:"user",content:"hello"}],stream:true}),
+      }));
+      expect(response.status).toBe(200);
+      await response.text();
+      expect(mocks.upstreamChat).toHaveBeenCalledOnce();
+      expect(mocks.upstreamChat.mock.calls[0][0].provider).toBe("google");
+    } finally {
+      if(oldAlias) ALIASES["fr-code"]=oldAlias;
+      MODEL_BY_ID.delete(mistralRoleProbe.id);
+    }
+  });
+
+  it("returns unsupported-capability for an exact Mistral model with mixed system/developer roles",async()=>{
+    MODEL_BY_ID.set(mistralRoleProbe.id,mistralRoleProbe);
+    try {
+      const response=await POST(new Request("https://freerouter.test/v1/chat/completions",{
+        method:"POST",headers:{"content-type":"application/json"},
+        body:JSON.stringify({model:mistralRoleProbe.id,messages:[{role:"system",content:"System"},{role:"developer",content:"Developer"},{role:"user",content:"hello"}]}),
+      }));
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toMatchObject({error:{code:"unsupported_capability"}});
+      expect(mocks.upstreamChat).not.toHaveBeenCalled();
+    } finally {
+      MODEL_BY_ID.delete(mistralRoleProbe.id);
+    }
   });
 
   it("keeps caller correlation ids out of admission and request accounting",async()=>{

@@ -1,6 +1,6 @@
-import { describe,expect,it } from "vitest";
-import { translateChatRequest, buildProviderChatBody, completionToSse } from "@/lib/providers/openai";
-import { MODEL_BY_ID, publicModels } from "@/lib/models/catalog";
+import { describe,expect,it,vi } from "vitest";
+import { translateChatRequest, buildProviderChatBody, completionToSse, upstreamChat } from "@/lib/providers/openai";
+import { MODEL_BY_ID, publicModels, type ModelProfile } from "@/lib/models/catalog";
 describe("Chat Completions request validation",()=>{
   it("accepts a minimal OpenAI chat request without changing message order",()=>{const input={model:"fr-code",messages:[{role:"system",content:"You are helpful."},{role:"user",content:"Hello"}],stream:true};expect(translateChatRequest(input)).toMatchObject(input)});
   it("rejects unknown fields instead of silently dropping them",()=>{expect(()=>translateChatRequest({model:"fr-auto",messages:[{role:"user",content:"x"}],logit_bias:{}})).toThrow(/Unsupported request field/)});
@@ -50,6 +50,28 @@ describe("Matilda (Maincode) provider compatibility",()=>{
     const events=(await response.text()).trim().split("\n\n").filter((event)=>event.startsWith("data: {")).map((event)=>JSON.parse(event.slice(6)));
     expect(events[1].choices[0].delta.tool_calls[0]).toMatchObject({index:0,id:"call_1",type:"function",function:{name:"lookup",arguments:'{"id":1}'}});
     expect(events[2].choices[0].finish_reason).toBe("tool_calls");
+  });
+});
+
+describe("Mistral OpenAI-compatible provider transport",()=>{
+  const mistral: ModelProfile={id:"mistral/ministral-test",provider:"mistral",upstream:"ministral-test",label:"Ministral test",context:null,maxOutput:null,text:"unknown",tools:"unknown",schema:"unknown",vision:"unknown",latency:"standard",status:"experimental"};
+  it("maps developer-only instructions to Mistral's supported system role",()=>{
+    const messages=[{role:"developer",content:"Follow these rules."},{role:"user",content:"hello"}];
+    expect(buildProviderChatBody(mistral,{model:mistral.id,messages})).toMatchObject({messages:[{role:"system",content:"Follow these rules."},{role:"user",content:"hello"}]});
+  });
+  it("rejects combined system and developer instructions to preserve their priority distinction",()=>{
+    expect(()=>buildProviderChatBody(mistral,{model:mistral.id,messages:[{role:"system",content:"System"},{role:"developer",content:"Developer"},{role:"user",content:"hello"}]})).toThrow(/cannot preserve separate system and developer instruction priority/);
+  });
+  it("uses the Mistral v1 chat endpoint, Bearer auth and streamed OpenAI request body",async()=>{
+    const fetchMock=vi.spyOn(globalThis,"fetch").mockResolvedValue(new Response("",{status:200}));
+    try {
+      await upstreamChat(mistral,{provider:"mistral",slot:1,label:"Mistral key",secret:"test-secret",fingerprint:"fp"},{model:mistral.id,messages:[{role:"user",content:"hello"}],tools:[{type:"function",function:{name:"lookup",parameters:{type:"object"}}}],tool_choice:"required"});
+      expect(fetchMock).toHaveBeenCalledOnce();
+      const [url,init]=fetchMock.mock.calls[0];
+      expect(url).toBe("https://api.mistral.ai/v1/chat/completions");
+      expect((init?.headers as Record<string,string>).authorization).toBe("Bearer test-secret");
+      expect(JSON.parse(String(init?.body))).toEqual({model:"ministral-test",messages:[{role:"user",content:"hello"}],tools:[{type:"function",function:{name:"lookup",parameters:{type:"object"}}}],tool_choice:"required",stream:true});
+    } finally { fetchMock.mockRestore(); }
   });
 });
 

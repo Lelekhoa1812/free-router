@@ -1,0 +1,95 @@
+.cache
+.agent*
+.agents*
+.cursor*
+.vscode*
+*task.md
+# docs/~$*
+**/.DS_Store
+
+__pycache__/
+*.pyc
+*.tsbuildinfo
+*.pyo
+*.pyd
+*.pyw
+*.pyz
+*.pywz
+*.pyzw
+*.pyzwz
+*.pyzwzw
+*.pyzwzwzw
+*.pyzwzwzwzw
+pytest_cache
+pytest_cache/
+
+.env
+!.env.example
+*.pem
+
+tmp/
+
+.next/
+.vite/
+node_modules/
+# Vite production output. Staging rebuilds this in Docker; do not commit hashes.
+/apps/web/dist/
+/apps/web/dist-gallery/
+.venv/
+.local/
+.local/work/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+minio-data/
+postgres-data/
+redis-data/
+
+neon.txt
+
+*.pptx
+!docs/commerical/*.pptx
+*.docx
+!prototypes/styles/*.docx
+examples/*pdf
+
+_bmad*
+.codoptic*
+CONTEXT.md
+CONTEXT-agent*.md
+PLAN.md
+TEST.md
+
+# Rebuildable coding-intelligence FTS indexes (often exceed GitHub's 100MB blob limit).
+**/.kollab/index/*.sqlite
+**/.kollab/scratch/live-*.jsonl
+**/.kollab/jobs/**/.JOB-*.lock
+
+# Accidental / local ECS taskdef dump dir (cli --out-dir)
+--out-dir/
+
+graphify-out
+# AWS deployment tooling
+# Note: .terraform.lock.hcl is intentionally NOT ignored — it pins provider
+# versions and must be committed for reproducible plans.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+aws/.runs/
+aws/scripts/.bin/
+
+tools/kollab_ops/env3.local
+
+# Cross-agent readiness ledger: the lock file is process state; the SBC dump is client material
+CHECKPOINT-*.md.lock
+dump/sbc/
+
+# Demo corpus output (demo/interview/corpus.py); regenerated, never committed.
+demo/interview/out/
+.vercel
+
+# Exclude every local environment file from CLI deployment uploads.
+.env*
