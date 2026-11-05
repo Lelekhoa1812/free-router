@@ -14,7 +14,7 @@ The list advertised 131,072 context tokens for 3B, 262,144 for 8B and 14B, and 2
 
 Real OpenAI TypeScript SDK probes against Mistral's direct endpoint passed streaming, named function calls and tool continuation, strict response schema, a small coding task, and a simple image question for the pinned 8B and 14B models. The 8B model additionally passed `auto` and `required` tool choice and strict tool schema. On 3B, a request with the OpenAI `developer` role returned HTTP 422. See [API_CONTRACTS.md](API_CONTRACTS.md) for the gateway's role handling.
 
-The gateway places 8B and 14B at the end of `fr-fast` and `fr-vision`. A direct coding sample gave both a pass on a palindrome task but missed cases in a recursive numeric sum task, so neither is included in `fr-code`. Small 4 remains experimental after 429 responses. These are bounded probes rather than comprehensive quality or production certification. Actual Cursor UI agent and tool-loop acceptance remains open.
+The gateway places 8B and 14B at the end of `fr-fast` and `fr-vision`. A direct coding sample gave both a pass on a palindrome task but missed cases in a recursive numeric sum task, so neither is included in `fr-code`. Small 4 remains experimental after 429 responses. On 5 November, production commit `5d47ef8` passed the gateway smoke below for both pinned models, including the optional image test and temporary-key cleanup. These are bounded probes rather than comprehensive quality or production certification. Actual Cursor UI agent and tool-loop acceptance remains open.
 
 ## Small comparative coding sample
 
