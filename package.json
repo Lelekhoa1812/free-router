@@ -16,6 +16,7 @@
     "smoke:deployment": "node scripts/deployed-smoke.mjs",
     "smoke:matilda": "node scripts/matilda-probe.mjs",
     "smoke:mistral": "node scripts/mistral-gateway-smoke.mjs",
+    "smoke:tokenharbor": "node scripts/tokenharbor-gateway-smoke.mjs",
     "test:watch": "vitest"
   },
   "dependencies": {

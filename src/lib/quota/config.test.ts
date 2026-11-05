@@ -23,7 +23,7 @@ describe("quota configuration", () => {
     const result = loadQuotaConfig();
     expect(result.valid).toBe(true);
     expect(result.config.mode).toBe("observe");
-    expect(result.config.groups).toHaveLength(7);
+    expect(result.config.groups).toHaveLength(8);
     for (const group of result.config.groups) {
       expect(group.slots).toHaveLength(9);
       expect(group.slots[0]).toBe(1);

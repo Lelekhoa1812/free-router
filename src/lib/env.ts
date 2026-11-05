@@ -19,6 +19,7 @@ export const env = {
     { id: "zenmux", label: "ZenMux", envPrefix: "ZENMUX_API_KEY_", baseUrl: "https://zenmux.ai/api/v1", count: 9 },
     { id: "orcarouter", label: "OrcaRouter", envPrefix: "ORCAROUTER_API_KEY_", baseUrl: "https://api.orcarouter.ai/v1", count: 9 },
     { id: "mistral", label: "Mistral", envPrefix: "MISTRAL_API_KEY_", baseUrl: "https://api.mistral.ai/v1", count: 9 },
+    { id: "tokenharbor", label: "TokenHarbor", envPrefix: "TOKENHARBOR_API_KEY_", baseUrl: "https://tokenharbor.ai/v1", count: 9 },
   ] as const,
   jevKey: process.env.JEV_TYPESAFE_API_KEY,
   smtpHost: process.env.SMTP_HOST,
