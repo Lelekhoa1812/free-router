@@ -54,7 +54,7 @@ const rows: Array<[Provider,string,string,number|null,number|null,CapabilityStat
   ["mistral","mistral-small-2603","Mistral Small 4",262144,null,"unknown","unknown","unknown","unknown","unknown","experimental","Listed by Mistral on 5 November 2026 but the attempted direct call returned HTTP 429; live capabilities remain unverified."],
   ["zenmux","deepseek/deepseek-v4-flash","DeepSeek V4 Flash",1048576,32768,"unknown","unknown","unknown","unknown","fast","experimental","Configured provider path; live credential probe and acceptance pending."],
   ["orcarouter","orcarouter/free","OrcaRouter Free Router",262144,32768,"unknown","unknown","unknown","unknown","fast","experimental","Configured provider path; live credential probe and acceptance pending."],
-  ["tokenharbor","deepseek-v4-flash:free","DeepSeek V4.1 Flash (Free)",1048576,32768,"unknown","unknown","unknown","unknown","fast","experimental","Configured provider path; live credential probe and acceptance pending."],
+  ["tokenharbor","deepseek-v4-flash:free","DeepSeek V4 Flash (Free)",1048576,32768,"unknown","unknown","unknown","unknown","fast","experimental","Configured provider path; live credential probe and acceptance pending."],
 ];
 
 export const MODEL_CATALOG: ModelProfile[] = rows.map(([provider, upstream, label, context, maxOutput, text, tools, schema, vision, latency, status, reason]) => ({

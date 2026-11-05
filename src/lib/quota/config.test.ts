@@ -33,6 +33,8 @@ describe("quota configuration", () => {
     expect(result.config.providers.openrouter.scope).toBe("group");
     expect(result.config.providers.openrouter.limits).toMatchObject({ rpm: 20, rpd: 50 });
     expect(result.config.providers.mistral).toMatchObject({ scope: "model", limits: { rpm: 5 } });
+    expect(result.config.providers.tokenharbor).toMatchObject({ scope: "group", timeZone: "UTC", limits: { rpm: 20 } });
+    expect(result.config.groups.filter((group) => group.provider === "tokenharbor").flatMap((group) => group.slots)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
   });
 
   it("merges custom groups and limits, filling unassigned slots safely", () => {

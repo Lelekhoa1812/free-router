@@ -1,6 +1,6 @@
 import { describe,expect,it,vi } from "vitest";
 import { translateChatRequest, buildProviderChatBody, completionToSse, upstreamChat } from "@/lib/providers/openai";
-import { MODEL_BY_ID, publicModels, type ModelProfile } from "@/lib/models/catalog";
+import { ALIASES, MODEL_BY_ID, publicModels, type ModelProfile } from "@/lib/models/catalog";
 describe("Chat Completions request validation",()=>{
   it("accepts a minimal OpenAI chat request without changing message order",()=>{const input={model:"fr-code",messages:[{role:"system",content:"You are helpful."},{role:"user",content:"Hello"}],stream:true};expect(translateChatRequest(input)).toMatchObject(input)});
   it("rejects unknown fields instead of silently dropping them",()=>{expect(()=>translateChatRequest({model:"fr-auto",messages:[{role:"user",content:"x"}],logit_bias:{}})).toThrow(/Unsupported request field/)});
@@ -106,6 +106,13 @@ describe("TokenHarbor provider compatibility", () => {
     const tokenharbor = MODEL_BY_ID.get("tokenharbor/deepseek-v4-flash:free");
     expect(tokenharbor).toBeDefined();
     expect(tokenharbor?.provider).toBe("tokenharbor");
+  });
+
+  it("keeps the unprobed TokenHarbor model out of discovery and router groups", () => {
+    const id = "tokenharbor/deepseek-v4-flash:free";
+    expect(MODEL_BY_ID.get(id)?.status).toBe("experimental");
+    expect(publicModels().map((model) => model.id)).not.toContain(id);
+    expect(Object.values(ALIASES).flat()).not.toContain(id);
   });
 
   it("builds standard OpenAI-compatible chat bodies with streaming", () => {
