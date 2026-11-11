@@ -2,7 +2,7 @@
 
 Last reviewed: 11 November 2026.
 
-FreeRouter keeps a local quota ledger in Upstash Redis. It estimates each request's token cost, reserves that estimate atomically, and settles the reservation from provider-reported usage when the response completes. The ledger is a gateway admission layer; it is not a live feed from Google, NVIDIA, OpenRouter, Matilda, ZenMux, OrcaRouter, Mistral, or TokenHarbor.
+FreeRouter keeps a local quota ledger in Upstash Redis. It estimates each request's token cost, reserves that estimate atomically, and settles the reservation from provider-reported usage when the response completes. The ledger is a gateway admission layer; it is not a live feed from Google, NVIDIA, OpenRouter, Matilda, ZenMux, OrcaRouter, Mistral, TokenHarbor, Groq, Novita, Hyperbolic, Inference.net, or Azure OpenAI.
 
 ## Modes
 
@@ -82,8 +82,23 @@ A group is a quota boundary, not a UI label. Put keys that share a real provider
 | ZenMux | `group` | `UTC` | `rpm: 20` |
 | OrcaRouter | `group` | `UTC` | `rpm: 20` |
 | TokenHarbor | `group` | `UTC` | `rpm: 20` |
+| Groq | `model` | `UTC` | `rpm: 30`; `groq/gpt-oss-120b` and `groq/gpt-oss-20b` also `rpd: 1000`, `tpm: 8000`, `tpd: 200000` |
+| Novita AI | `model` | `UTC` | none |
+| Hyperbolic | `group` | `UTC` | `rpm: 60` |
+| Inference.net | `group` | `UTC` | `rpm: 30` |
+| Azure OpenAI | `model` | `UTC` | none at provider level; see the tier 0 model windows below |
 
 Mistral's [usage and limits](https://docs.mistral.ai/admin/billing-usage/usage-limits) are set per organization and model; inspect the account's current limits rather than assuming that separate keys have independent quotas. Free mode offers included usage for evaluation, but the public documentation does not establish a universal credit amount or per-model allowance. The five-RPM FreeRouter default is a local guard, not a provider promise, and the default `observe` mode does not enforce it. Configure the actual limits and use `enforce` if local admission is required. A 429 was observed during testing without a retry header.
+
+### Published free conditions (reviewed 11 November 2026)
+
+These readings are dated public documentation, not a live balance. The Quota page shows the same summary on each provider. A refilled rate window is not an allowance that runs out; a credit balance is.
+
+- **Groq.** The [Free plan table](https://console.groq.com/docs/rate-limits) refills. `openai/gpt-oss-120b` and `openai/gpt-oss-20b` are 30 RPM, 1,000 RPD, 8,000 TPM, and 200,000 TPD. `whisper-large-v3` is 20 RPM, 2,000 RPD, 7,200 audio seconds per hour, and 28,800 audio seconds per day. `groq/llama-3.3-70b-versatile` and `groq/llama-3.1-8b-instant` are not on that free table, so they keep only the 30 RPM local guard.
+- **Novita AI.** [LLM rate limits](https://docs.novita.ai/guides/llm-rate-limits) put an unpaid account in tier T1 when monthly top-ups did not exceed $50 in any of the last three calendar months. Limits are per model, in RPM and TPM, and they refill. The numeric matrix did not render in the official markdown on this review, so FreeRouter does not invent an RPM or TPM. The public model list priced `apodex/apodex-1.1-mini` at $0 input and $0 output. `inclusionai/ling-3.1-flash` was $0.30 input and $0.90 output per million tokens, so that catalog route spends the account balance rather than a free grant. Its listed context that day was 1,000,000 tokens.
+- **Hyperbolic.** [Account management](https://hyperbolic.ai/docs/general/account-management) describes Free Tier as $0 per month. Verifying a phone number adds $1 of credit and is required before inference. The Free Tier plan card shows 60 RPM and a 100 IP limit; a one-time $5 deposit reaches Pro, whose card shows 600 RPM. [Inference](https://hyperbolic.ai/docs/inference/overview) is billed per token from the credit balance and stops with HTTP 402 `insufficient_balance` when that balance is zero. An older changelog line said Free Tier inference required Pro; the current account page supersedes that line.
+- **Inference.net.** The [pricing page](https://inference.net/pricing/) lists Pay as you go as $0 plus usage, with 1,000,000 included gateway requests, 1,000,000 tracing spans per month, 14-day retention, one seat, and 30 requests per minute. It does not say the free gateway grant is monthly, and it does not publish a free token amount. The [API rate limits](https://docs.inference.net/api/rate-limits) also list Free at 30 RPM. Serverless tokens are billed from the account balance. The same pricing page lists Growth at 250 requests per minute, while the API page lists paid tiers at 1,000 RPM; that disagreement does not change the free-tier 30 RPM cap.
+- **Azure OpenAI.** The [quotas and limits](https://learn.microsoft.com/en-us/azure/foundry/openai/quotas-limits) page says Free tier (tier 0) subscriptions cannot request a quota increase. Its GlobalStandard tier 0 table lists `gpt-4.1-mini` at 200 RPM and 200,000 TPM, `gpt-5-mini` at 500 RPM and 500,000 TPM, `o4-mini` at 100 RPM and 100,000 TPM, and `text-embedding-3-small` at 1,000 requests per 10 seconds and 1,000,000 TPM. These are refilled windows. The batch-quota tables list Azure for Students and free trials as not available, so a trial subscription can still have no usable quota. Confirm the offer in the Azure portal before treating the tier 0 table as the account's live limit.
 
 ## Accounting
 

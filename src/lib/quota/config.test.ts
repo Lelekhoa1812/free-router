@@ -34,11 +34,20 @@ describe("quota configuration", () => {
     expect(result.config.providers.openrouter.limits).toMatchObject({ rpm: 20, rpd: 50 });
     expect(result.config.providers.mistral).toMatchObject({ scope: "model", limits: { rpm: 5 } });
     expect(result.config.providers.tokenharbor).toMatchObject({ scope: "group", timeZone: "UTC", limits: { rpm: 20 } });
-    expect(result.config.providers.groq).toMatchObject({ scope: "model", limits: { rpm: 30 } });
-    expect(result.config.providers.novita).toMatchObject({ scope: "group", limits: { rpm: 30 } });
-    expect(result.config.providers.hyperbolic).toMatchObject({ scope: "model", limits: { rpm: 60 } });
+    expect(result.config.providers.groq).toMatchObject({ scope: "model", limits: { rpm: 30 }, models: { "groq/gpt-oss-20b": { rpd: 1_000, tpm: 8_000, tpd: 200_000 } } });
+    expect(result.config.providers.novita).toMatchObject({ scope: "model", limits: {} });
+    expect(result.config.providers.hyperbolic).toMatchObject({ scope: "group", limits: { rpm: 60 } });
     expect(result.config.providers.inference).toMatchObject({ scope: "group", limits: { rpm: 30 } });
-    expect(result.config.providers.azure).toMatchObject({ scope: "model", limits: { rpm: 5 } });
+    expect(result.config.providers.azure).toMatchObject({
+      scope: "model",
+      limits: {},
+      models: {
+        "azure/gpt-4.1-mini": { rpm: 200, tpm: 200_000 },
+        "azure/gpt-5-mini": { rpm: 500, tpm: 500_000 },
+        "azure/o4-mini": { rpm: 100, tpm: 100_000 },
+        "azure/text-embedding-3-small": { tpm: 1_000_000 },
+      },
+    });
     expect(result.config.providers).not.toHaveProperty("nim");
     expect(result.config.groups.filter((group) => group.provider === "tokenharbor").flatMap((group) => group.slots)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
   });

@@ -55,32 +55,32 @@ const rows: Array<[Provider,string,string,number|null,number|null,CapabilityStat
   ["zenmux","deepseek/deepseek-v4-flash","DeepSeek V4 Flash",1048576,32768,"unknown","unknown","unknown","unknown","fast","experimental","Configured provider path; live credential probe and acceptance pending."],
   ["orcarouter","orcarouter/free","OrcaRouter Free Router",262144,32768,"unknown","unknown","unknown","unknown","fast","experimental","Configured provider path; live credential probe and acceptance pending."],
   ["tokenharbor","deepseek-v4-flash:free","DeepSeek V4 Flash (Free)",1048576,32768,"unknown","unknown","unknown","unknown","fast","experimental","Configured provider path; live credential probe and acceptance pending."],
-  // Groq (Free tier: 30 RPM, ~6K TPM, 14.4K RPD)
-  ["groq","llama-3.3-70b-versatile","Llama 3.3 70B Versatile",131072,32768,"passed","passed","passed","unsupported","fast","ready","Groq Free tier: 30 RPM, ~6K TPM. OpenAI-compatible."],
-  ["groq","gpt-oss-120b","GPT-OSS 120B",131072,32768,"passed","passed","passed","unsupported","fast","ready","Groq Free tier: 30 RPM, ~6K TPM. OpenAI's open model with reasoning."],
-  ["groq","gpt-oss-20b","GPT-OSS 20B",131072,32768,"passed","passed","passed","unsupported","fast","ready","Groq Free tier: 30 RPM, ~6K TPM. OpenAI's open model with reasoning."],
-  ["groq","llama-3.1-8b-instant","Llama 3.1 8B Instant",131072,32768,"passed","passed","passed","unsupported","fast","ready","Groq Free tier: 30 RPM, ~6K TPM. Ultra-fast inference."],
-  ["groq","whisper-large-v3","Whisper Large v3",null,null,"unsupported","unsupported","unsupported","unsupported","fast","ready","Audio transcription only."],
-  // Novita AI (Free models: Apodex 1.1 Mini, Ling 3.1 Flash)
-  ["novita","apodex-1.1-mini","Apodex 1.1 Mini",262144,32768,"passed","passed","passed","unsupported","fast","ready","Novita AI Free tier: Free input/output. 30 RPM / 50M TPM."],
-  ["novita","ling-3.1-flash","Ling 3.1 Flash",262144,32768,"passed","passed","passed","unsupported","fast","ready","Novita AI Free tier: Free input/output. 30 RPM / 50M TPM."],
+  // Groq Free plan reviewed 11 November 2026. Only the gpt-oss rows are on the published table.
+  ["groq","llama-3.3-70b-versatile","Llama 3.3 70B Versatile",131072,32768,"passed","passed","passed","unsupported","fast","ready","Not listed on Groq's published Free plan table reviewed 11 November 2026."],
+  ["groq","gpt-oss-120b","GPT-OSS 120B",131072,32768,"passed","passed","passed","unsupported","fast","ready","Groq Free plan, reviewed 11 November 2026: 30 RPM, 1,000 RPD, 8,000 TPM, 200,000 TPD."],
+  ["groq","gpt-oss-20b","GPT-OSS 20B",131072,32768,"passed","passed","passed","unsupported","fast","ready","Groq Free plan, reviewed 11 November 2026: 30 RPM, 1,000 RPD, 8,000 TPM, 200,000 TPD."],
+  ["groq","llama-3.1-8b-instant","Llama 3.1 8B Instant",131072,32768,"passed","passed","passed","unsupported","fast","ready","Not listed on Groq's published Free plan table reviewed 11 November 2026."],
+  ["groq","whisper-large-v3","Whisper Large v3",null,null,"unsupported","unsupported","unsupported","unsupported","fast","ready","Groq Free plan audio route, reviewed 11 November 2026: 20 RPM, 2,000 RPD, 7,200 audio seconds per hour, 28,800 per day."],
+  // Novita AI. Apodex 1.1 Mini is priced at $0. Ling 3.1 Flash is billed per token.
+  ["novita","apodex-1.1-mini","Apodex 1.1 Mini",262144,32768,"passed","passed","passed","unsupported","fast","ready","Public Novita model list on 11 November 2026: $0 input and $0 output. T1 rate limits refill, but the official RPM/TPM matrix did not render."],
+  ["novita","ling-3.1-flash","Ling 3.1 Flash",1000000,32768,"passed","passed","passed","unsupported","fast","ready","Public Novita model list on 11 November 2026: $0.30 input and $0.90 output per million tokens. This route draws the account balance; it is not a free allowance."],
   // Hyperbolic (Phone verify: 60 RPM, $1 credit)
-  ["hyperbolic","deepseek-v4.1-flash","DeepSeek V4.1 Flash",1048576,32768,"passed","passed","passed","unsupported","fast","ready","Hyperbolic Free tier: Phone verify for 60 RPM. $1 credit included."],
-  ["hyperbolic","glm-5.3-flash","GLM 5.3 Flash",1048576,32768,"passed","passed","passed","unsupported","fast","ready","Hyperbolic Free tier: Phone verify for 60 RPM."],
-  ["hyperbolic","qwen3.8-27b","Qwen 3.8 27B",262144,32768,"passed","passed","passed","unsupported","fast","ready","Hyperbolic Free tier: Phone verify for 60 RPM."],
-  ["hyperbolic","pixtral-12b","Pixtral 12B",131072,32768,"passed","passed","passed","passed","fast","ready","Hyperbolic Free tier: Vision model. Phone verify for 60 RPM."],
-  ["hyperbolic","llama-3.1-405b-fp8","Llama 3.1 405B FP8",131072,32768,"passed","passed","passed","unsupported","slow","experimental","Hyperbolic Free tier: Large model. Phone verify for 60 RPM."],
-  // Inference.net (Free: 30 RPM, 1M req/mo)
-  ["inference","gpt-6.1-sol","GPT-6.1 Sol",128000,32768,"passed","passed","passed","unsupported","fast","ready","Inference.net Free tier: 30 RPM, 1M req/mo. Unified catalog."],
-  ["inference","claude-opus-5.5","Claude Opus 5.5",200000,65536,"passed","passed","passed","passed","standard","ready","Inference.net Free tier: 30 RPM, 1M req/mo. Vision capable."],
-  ["inference","gemini-3.7-flash","Gemini 3.7 Flash",1048576,65536,"passed","passed","passed","passed","fast","ready","Inference.net Free tier: 30 RPM, 1M req/mo. Vision capable."],
-  ["inference","deepseek-v4.1-flash","DeepSeek V4.1 Flash",1048576,32768,"passed","passed","passed","unsupported","fast","ready","Inference.net Free tier: 30 RPM, 1M req/mo."],
-  ["inference","glm-5.3-flash","GLM 5.3 Flash",1048576,32768,"passed","passed","passed","unsupported","fast","ready","Inference.net Free tier: 30 RPM, 1M req/mo."],
-  // Azure OpenAI Free Tier (4 models only)
-  ["azure","gpt-4.1-mini","GPT-4.1 Mini",128000,16384,"passed","passed","passed","unsupported","fast","ready","Azure OpenAI Free Tier: Fixed quota, no increases. Mini model only."],
-  ["azure","gpt-5-mini","GPT-5 Mini",128000,16384,"passed","passed","passed","unsupported","fast","ready","Azure OpenAI Free Tier: Fixed quota, no increases. Mini model only."],
-  ["azure","o4-mini","o4 Mini",128000,16384,"passed","passed","passed","unsupported","fast","ready","Azure OpenAI Free Tier: Fixed quota, no increases. Reasoning model."],
-  ["azure","text-embedding-3-small","Text Embedding 3 Small",8192,null,"unsupported","unsupported","unsupported","unsupported","fast","ready","Azure OpenAI Free Tier: Embeddings only."],
+  ["hyperbolic","deepseek-v4.1-flash","DeepSeek V4.1 Flash",1048576,32768,"passed","passed","passed","unsupported","fast","ready","Hyperbolic Free Tier, reviewed 11 November 2026: phone verification adds $1 and a 60 RPM limit. Per-token billing stops at a zero balance."],
+  ["hyperbolic","glm-5.3-flash","GLM 5.3 Flash",1048576,32768,"passed","passed","passed","unsupported","fast","ready","Hyperbolic Free Tier, reviewed 11 November 2026: phone verification adds $1 and a 60 RPM limit. Per-token billing stops at a zero balance."],
+  ["hyperbolic","qwen3.8-27b","Qwen 3.8 27B",262144,32768,"passed","passed","passed","unsupported","fast","ready","Hyperbolic Free Tier, reviewed 11 November 2026: phone verification adds $1 and a 60 RPM limit. Per-token billing stops at a zero balance."],
+  ["hyperbolic","pixtral-12b","Pixtral 12B",131072,32768,"passed","passed","passed","passed","fast","ready","Hyperbolic Free Tier vision route, reviewed 11 November 2026: phone verification adds $1 and a 60 RPM limit. Per-token billing stops at a zero balance."],
+  ["hyperbolic","llama-3.1-405b-fp8","Llama 3.1 405B FP8",131072,32768,"passed","passed","passed","unsupported","slow","experimental","Hyperbolic Free Tier large route, reviewed 11 November 2026: phone verification adds $1 and a 60 RPM limit. Per-token billing stops at a zero balance."],
+  // Inference.net Pay as you go: 30 RPM and 1,000,000 included gateway requests.
+  ["inference","gpt-6.1-sol","GPT-6.1 Sol",128000,32768,"passed","passed","passed","unsupported","fast","ready","Inference.net Pay as you go, reviewed 11 November 2026: 30 RPM and 1,000,000 included gateway requests. Token use is billed from the account balance."],
+  ["inference","claude-opus-5.5","Claude Opus 5.5",200000,65536,"passed","passed","passed","passed","standard","ready","Inference.net Pay as you go, reviewed 11 November 2026: 30 RPM and 1,000,000 included gateway requests. Vision capable. Token use is billed from the account balance."],
+  ["inference","gemini-3.7-flash","Gemini 3.7 Flash",1048576,65536,"passed","passed","passed","passed","fast","ready","Inference.net Pay as you go, reviewed 11 November 2026: 30 RPM and 1,000,000 included gateway requests. Vision capable. Token use is billed from the account balance."],
+  ["inference","deepseek-v4.1-flash","DeepSeek V4.1 Flash",1048576,32768,"passed","passed","passed","unsupported","fast","ready","Inference.net Pay as you go, reviewed 11 November 2026: 30 RPM and 1,000,000 included gateway requests. Token use is billed from the account balance."],
+  ["inference","glm-5.3-flash","GLM 5.3 Flash",1048576,32768,"passed","passed","passed","unsupported","fast","ready","Inference.net Pay as you go, reviewed 11 November 2026: 30 RPM and 1,000,000 included gateway requests. Token use is billed from the account balance."],
+  // Azure OpenAI published Tier 0 GlobalStandard windows, reviewed 11 November 2026.
+  ["azure","gpt-4.1-mini","GPT-4.1 Mini",128000,16384,"passed","passed","passed","unsupported","fast","ready","Azure OpenAI tier 0 GlobalStandard, reviewed 11 November 2026: 200 RPM and 200,000 TPM. Free tier cannot request an increase."],
+  ["azure","gpt-5-mini","GPT-5 Mini",128000,16384,"passed","passed","passed","unsupported","fast","ready","Azure OpenAI tier 0 GlobalStandard, reviewed 11 November 2026: 500 RPM and 500,000 TPM. Free tier cannot request an increase."],
+  ["azure","o4-mini","o4 Mini",128000,16384,"passed","passed","passed","unsupported","fast","ready","Azure OpenAI tier 0 GlobalStandard, reviewed 11 November 2026: 100 RPM and 100,000 TPM. Free tier cannot request an increase."],
+  ["azure","text-embedding-3-small","Text Embedding 3 Small",8192,null,"unsupported","unsupported","unsupported","unsupported","fast","ready","Azure OpenAI tier 0 GlobalStandard, reviewed 11 November 2026: 1,000 requests per 10 seconds and 1,000,000 TPM."],
 ];
 
 export const MODEL_CATALOG: ModelProfile[] = rows.map(([provider, upstream, label, context, maxOutput, text, tools, schema, vision, latency, status, reason]) => ({

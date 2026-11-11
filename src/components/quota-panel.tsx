@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Gauge, RefreshCw } from "lucide-react";
+import { FREE_TIER_NOTES } from "@/lib/quota/free-tier";
 
 interface QuotaSnapshot {
   available: boolean;
@@ -136,7 +137,7 @@ export function QuotaPanel() {
           <div className="section-title">
             <div>
               <h2>{provider.label}</h2>
-              <p>Quota groups follow the real provider account or project boundary.</p>
+              <p>{FREE_TIER_NOTES[provider.id] ?? "Quota groups follow the real provider account or project boundary."}</p>
             </div>
           </div>
           {provider.groups.map((group) => (

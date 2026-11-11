@@ -118,32 +118,42 @@ export const DEFAULT_PROVIDER_CONFIG: Record<Provider, QuotaProviderConfig> = {
   groq: {
     scope: "model",
     timeZone: "UTC",
-    // Groq Free tier: 30 RPM, ~6K TPM, 14.4K RPD
+    // Published Groq Free plan for gpt-oss models. Other catalog IDs are not on that table.
     limits: { rpm: 30 },
+    models: {
+      "groq/gpt-oss-120b": { rpm: 30, rpd: 1_000, tpm: 8_000, tpd: 200_000 },
+      "groq/gpt-oss-20b": { rpm: 30, rpd: 1_000, tpm: 8_000, tpd: 200_000 },
+    },
   },
   novita: {
-    scope: "group",
-    timeZone: "UTC",
-    // Novita AI Free tier: 30 RPM, 50M TPM for free models
-    limits: { rpm: 30 },
-  },
-  hyperbolic: {
     scope: "model",
     timeZone: "UTC",
-    // Hyperbolic Free tier (phone verified): 60 RPM
+    // The official T1 table did not include numeric RPM or TPM on 11 November 2026.
+    limits: {},
+  },
+  hyperbolic: {
+    scope: "group",
+    timeZone: "UTC",
+    // Free Tier plan card: 60 RPM. The $1 phone credit is an account balance, not a request window.
     limits: { rpm: 60 },
   },
   inference: {
     scope: "group",
     timeZone: "UTC",
-    // Inference.net Free tier: 30 RPM, 1M req/mo
+    // Pay as you go generation cap. The 1M included gateway requests are not a daily window.
     limits: { rpm: 30 },
   },
   azure: {
     scope: "model",
     timeZone: "UTC",
-    // Azure OpenAI Free Tier: Fixed quotas, no increases
-    limits: { rpm: 5 },
+    // Published Tier 0 GlobalStandard windows. A free-trial subscription can still be blocked in the portal.
+    limits: {},
+    models: {
+      "azure/gpt-4.1-mini": { rpm: 200, tpm: 200_000 },
+      "azure/gpt-5-mini": { rpm: 500, tpm: 500_000 },
+      "azure/o4-mini": { rpm: 100, tpm: 100_000 },
+      "azure/text-embedding-3-small": { tpm: 1_000_000 },
+    },
   },
 };
 
