@@ -56,7 +56,6 @@ const PROVIDER_IDS = [
   "novita",
   "hyperbolic",
   "inference",
-  "nim",
   "azure",
 ] as const satisfies readonly Provider[];
 
@@ -139,12 +138,6 @@ export const DEFAULT_PROVIDER_CONFIG: Record<Provider, QuotaProviderConfig> = {
     timeZone: "UTC",
     // Inference.net Free tier: 30 RPM, 1M req/mo
     limits: { rpm: 30 },
-  },
-  nim: {
-    scope: "model",
-    timeZone: "UTC",
-    // NVIDIA NIM Developer Program: Variable rate limits, conservative default
-    limits: { rpm: 10 },
   },
   azure: {
     scope: "model",

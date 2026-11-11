@@ -36,6 +36,8 @@ describe("model registry",()=>{
       "nvidia/nvidia/nemotron-nano-3-30b-a3b","nvidia/nvidia/nemotron-3-super-120b-a12b",
       "openrouter/thinkingmachines/inkling-small:free","openrouter/thinkingmachines/inkling:free",
       "google/gemini-flash-latest",
+      "nim/nemotron-3-ultra-550b","nim/nemotron-3.5-super-vl","nim/nemotron-3.5-lightning",
+      "nim/glm-5.3-flash","nim/llama-3.1-70b","nim/llama-3.2-90b-vision",
     ];
     for(const id of removed){
       expect(MODEL_BY_ID.has(id),id).toBe(false);

@@ -1,6 +1,6 @@
 import { providers } from "@/lib/env";
 
-export type EmbeddingProvider = "google" | "nvidia" | "openrouter" | "novita" | "hyperbolic" | "inference" | "nim" | "azure";
+export type EmbeddingProvider = "google" | "nvidia" | "openrouter" | "novita" | "hyperbolic" | "inference" | "azure";
 
 export interface EmbeddingProfile {
   id: string;

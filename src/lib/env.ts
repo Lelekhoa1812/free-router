@@ -25,7 +25,6 @@ export const env = {
     { id: "novita", label: "Novita AI", envPrefix: "NOVITA_API_KEY_", baseUrl: "https://api.novita.ai/openai/v1", count: 9 },
     { id: "hyperbolic", label: "Hyperbolic", envPrefix: "HYPERBOLIC_API_KEY_", baseUrl: "https://api.hyperbolic.ai/inference/v1", count: 9 },
     { id: "inference", label: "Inference.net", envPrefix: "INFERENCE_API_KEY_", baseUrl: "https://api.inference.net/v1", count: 9 },
-    { id: "nim", label: "NVIDIA NIM (Extended)", envPrefix: "NIM_API_KEY_", baseUrl: "https://integrate.api.nvidia.com/v1", count: 9 },
     { id: "azure", label: "Azure OpenAI", envPrefix: "AZURE_OPENAI_API_KEY_", baseUrl: "https://{resource}.openai.azure.com", count: 9 },
   ] as const,
   jevKey: process.env.JEV_TYPESAFE_API_KEY,
