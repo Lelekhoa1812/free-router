@@ -52,6 +52,12 @@ const PROVIDER_IDS = [
   "orcarouter",
   "mistral",
   "tokenharbor",
+  "groq",
+  "novita",
+  "hyperbolic",
+  "inference",
+  "nim",
+  "azure",
 ] as const satisfies readonly Provider[];
 
 const PROVIDER_COUNT = new Map(providers.map((provider) => [provider.id, provider.count]));
@@ -109,6 +115,42 @@ export const DEFAULT_PROVIDER_CONFIG: Record<Provider, QuotaProviderConfig> = {
     timeZone: "UTC",
     // Unified free tier guard; operators configure real account bounds.
     limits: { rpm: 20 },
+  },
+  groq: {
+    scope: "model",
+    timeZone: "UTC",
+    // Groq Free tier: 30 RPM, ~6K TPM, 14.4K RPD
+    limits: { rpm: 30 },
+  },
+  novita: {
+    scope: "group",
+    timeZone: "UTC",
+    // Novita AI Free tier: 30 RPM, 50M TPM for free models
+    limits: { rpm: 30 },
+  },
+  hyperbolic: {
+    scope: "model",
+    timeZone: "UTC",
+    // Hyperbolic Free tier (phone verified): 60 RPM
+    limits: { rpm: 60 },
+  },
+  inference: {
+    scope: "group",
+    timeZone: "UTC",
+    // Inference.net Free tier: 30 RPM, 1M req/mo
+    limits: { rpm: 30 },
+  },
+  nim: {
+    scope: "model",
+    timeZone: "UTC",
+    // NVIDIA NIM Developer Program: Variable rate limits, conservative default
+    limits: { rpm: 10 },
+  },
+  azure: {
+    scope: "model",
+    timeZone: "UTC",
+    // Azure OpenAI Free Tier: Fixed quotas, no increases
+    limits: { rpm: 5 },
   },
 };
 

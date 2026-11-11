@@ -35,7 +35,7 @@ Google Gemini 3.1 Flash-Lite passed one task in 4,802 ms and timed out after 60 
 With an authorized local environment and the target's MongoDB and encryption settings, run:
 
 ```sh
-FREEROUTER_BASE_URL=https://<deployment> MISTRAL_SMOKE_MODEL=mistral/ministral-8b-2512 pnpm smoke:mistral
+FREEROUTER_BASE_URL=https://free-router-olive.vercel.app MISTRAL_SMOKE_MODEL=mistral/ministral-8b-2512 pnpm smoke:mistral
 ```
 
 The script reads the existing admin access state, creates a temporary scoped client key, checks discovery, streaming, streamed tools and continuation, strict schema, developer-only instructions, Responses streaming and stored Responses retrieval/deletion, then revokes and deletes the key. Optionally set `MISTRAL_SMOKE_IMAGE` to a PNG containing a blue circle and a red square to run the vision check. It prints sanitized pass/fail results, not credentials. This smoke makes real model requests and may consume the account's included or paid usage.

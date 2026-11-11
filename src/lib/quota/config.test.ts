@@ -23,7 +23,7 @@ describe("quota configuration", () => {
     const result = loadQuotaConfig();
     expect(result.valid).toBe(true);
     expect(result.config.mode).toBe("observe");
-    expect(result.config.groups).toHaveLength(8);
+    expect(result.config.groups).toHaveLength(14);
     for (const group of result.config.groups) {
       expect(group.slots).toHaveLength(9);
       expect(group.slots[0]).toBe(1);
@@ -34,6 +34,12 @@ describe("quota configuration", () => {
     expect(result.config.providers.openrouter.limits).toMatchObject({ rpm: 20, rpd: 50 });
     expect(result.config.providers.mistral).toMatchObject({ scope: "model", limits: { rpm: 5 } });
     expect(result.config.providers.tokenharbor).toMatchObject({ scope: "group", timeZone: "UTC", limits: { rpm: 20 } });
+    expect(result.config.providers.groq).toMatchObject({ scope: "model", limits: { rpm: 30 } });
+    expect(result.config.providers.novita).toMatchObject({ scope: "group", limits: { rpm: 30 } });
+    expect(result.config.providers.hyperbolic).toMatchObject({ scope: "model", limits: { rpm: 60 } });
+    expect(result.config.providers.inference).toMatchObject({ scope: "group", limits: { rpm: 30 } });
+    expect(result.config.providers.nim).toMatchObject({ scope: "model", limits: { rpm: 10 } });
+    expect(result.config.providers.azure).toMatchObject({ scope: "model", limits: { rpm: 5 } });
     expect(result.config.groups.filter((group) => group.provider === "tokenharbor").flatMap((group) => group.slots)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
   });
 

@@ -6,6 +6,12 @@ const PROVIDER_LOGOS = {
   zenmux: { src: "/brand/providers/zenmux.svg", width: 160, height: 160 },
   orcarouter: { src: "/brand/providers/orcarouter.png", width: 180, height: 180 },
   mistral: { src: "/brand/providers/mistral.svg", width: 48, height: 48 },
+  groq: { src: "/brand/providers/groq.svg", width: 32, height: 32 },
+  novita: { src: "/brand/providers/novita.svg", width: 32, height: 32 },
+  hyperbolic: { src: "/brand/providers/hyperbolic.svg", width: 32, height: 32 },
+  inference: { src: "/brand/providers/inference.svg", width: 32, height: 32 },
+  nim: { src: "/brand/providers/nim.svg", width: 32, height: 32 },
+  azure: { src: "/brand/providers/azure.svg", width: 32, height: 32 },
 } as const;
 
 type ProviderId = keyof typeof PROVIDER_LOGOS;

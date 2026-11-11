@@ -1,4 +1,4 @@
-export type Provider = "google" | "nvidia" | "openrouter" | "matilda" | "zenmux" | "orcarouter" | "mistral" | "tokenharbor";
+export type Provider = "google" | "nvidia" | "openrouter" | "matilda" | "zenmux" | "orcarouter" | "mistral" | "tokenharbor" | "groq" | "novita" | "hyperbolic" | "inference" | "nim" | "azure";
 export type CapabilityState = "passed" | "failed" | "unknown" | "unsupported";
 export interface ModelProfile {
   id: string; provider: Provider; upstream: string; label: string; context: number | null; maxOutput: number | null;
@@ -55,6 +55,39 @@ const rows: Array<[Provider,string,string,number|null,number|null,CapabilityStat
   ["zenmux","deepseek/deepseek-v4-flash","DeepSeek V4 Flash",1048576,32768,"unknown","unknown","unknown","unknown","fast","experimental","Configured provider path; live credential probe and acceptance pending."],
   ["orcarouter","orcarouter/free","OrcaRouter Free Router",262144,32768,"unknown","unknown","unknown","unknown","fast","experimental","Configured provider path; live credential probe and acceptance pending."],
   ["tokenharbor","deepseek-v4-flash:free","DeepSeek V4 Flash (Free)",1048576,32768,"unknown","unknown","unknown","unknown","fast","experimental","Configured provider path; live credential probe and acceptance pending."],
+  // Groq (Free tier: 30 RPM, ~6K TPM, 14.4K RPD)
+  ["groq","llama-3.3-70b-versatile","Llama 3.3 70B Versatile",131072,32768,"passed","passed","passed","unsupported","fast","ready","Groq Free tier: 30 RPM, ~6K TPM. OpenAI-compatible."],
+  ["groq","gpt-oss-120b","GPT-OSS 120B",131072,32768,"passed","passed","passed","unsupported","fast","ready","Groq Free tier: 30 RPM, ~6K TPM. OpenAI's open model with reasoning."],
+  ["groq","gpt-oss-20b","GPT-OSS 20B",131072,32768,"passed","passed","passed","unsupported","fast","ready","Groq Free tier: 30 RPM, ~6K TPM. OpenAI's open model with reasoning."],
+  ["groq","llama-3.1-8b-instant","Llama 3.1 8B Instant",131072,32768,"passed","passed","passed","unsupported","fast","ready","Groq Free tier: 30 RPM, ~6K TPM. Ultra-fast inference."],
+  ["groq","whisper-large-v3","Whisper Large v3",null,null,"unsupported","unsupported","unsupported","unsupported","fast","ready","Audio transcription only."],
+  // Novita AI (Free models: Apodex 1.1 Mini, Ling 3.1 Flash)
+  ["novita","apodex-1.1-mini","Apodex 1.1 Mini",262144,32768,"passed","passed","passed","unsupported","fast","ready","Novita AI Free tier: Free input/output. 30 RPM / 50M TPM."],
+  ["novita","ling-3.1-flash","Ling 3.1 Flash",262144,32768,"passed","passed","passed","unsupported","fast","ready","Novita AI Free tier: Free input/output. 30 RPM / 50M TPM."],
+  // Hyperbolic (Phone verify: 60 RPM, $1 credit)
+  ["hyperbolic","deepseek-v4.1-flash","DeepSeek V4.1 Flash",1048576,32768,"passed","passed","passed","unsupported","fast","ready","Hyperbolic Free tier: Phone verify for 60 RPM. $1 credit included."],
+  ["hyperbolic","glm-5.3-flash","GLM 5.3 Flash",1048576,32768,"passed","passed","passed","unsupported","fast","ready","Hyperbolic Free tier: Phone verify for 60 RPM."],
+  ["hyperbolic","qwen3.8-27b","Qwen 3.8 27B",262144,32768,"passed","passed","passed","unsupported","fast","ready","Hyperbolic Free tier: Phone verify for 60 RPM."],
+  ["hyperbolic","pixtral-12b","Pixtral 12B",131072,32768,"passed","passed","passed","passed","fast","ready","Hyperbolic Free tier: Vision model. Phone verify for 60 RPM."],
+  ["hyperbolic","llama-3.1-405b-fp8","Llama 3.1 405B FP8",131072,32768,"passed","passed","passed","unsupported","slow","experimental","Hyperbolic Free tier: Large model. Phone verify for 60 RPM."],
+  // Inference.net (Free: 30 RPM, 1M req/mo)
+  ["inference","gpt-6.1-sol","GPT-6.1 Sol",128000,32768,"passed","passed","passed","unsupported","fast","ready","Inference.net Free tier: 30 RPM, 1M req/mo. Unified catalog."],
+  ["inference","claude-opus-5.5","Claude Opus 5.5",200000,65536,"passed","passed","passed","passed","standard","ready","Inference.net Free tier: 30 RPM, 1M req/mo. Vision capable."],
+  ["inference","gemini-3.7-flash","Gemini 3.7 Flash",1048576,65536,"passed","passed","passed","passed","fast","ready","Inference.net Free tier: 30 RPM, 1M req/mo. Vision capable."],
+  ["inference","deepseek-v4.1-flash","DeepSeek V4.1 Flash",1048576,32768,"passed","passed","passed","unsupported","fast","ready","Inference.net Free tier: 30 RPM, 1M req/mo."],
+  ["inference","glm-5.3-flash","GLM 5.3 Flash",1048576,32768,"passed","passed","passed","unsupported","fast","ready","Inference.net Free tier: 30 RPM, 1M req/mo."],
+  // NVIDIA NIM Extended (Developer Program - prototyping)
+  ["nim","nemotron-3-ultra-550b","Nemotron 3 Ultra 550B",1000000,65536,"passed","passed","passed","unsupported","fast","ready","NVIDIA NIM Developer Program: Free for prototyping. Rate limits variable."],
+  ["nim","nemotron-3.5-super-vl","Nemotron 3.5 Super VL",1000000,131072,"passed","passed","passed","passed","fast","ready","NVIDIA NIM Developer Program: Vision model. Rate limits variable."],
+  ["nim","nemotron-3.5-lightning","Nemotron 3.5 Lightning",1000000,65536,"passed","passed","passed","unsupported","fast","ready","NVIDIA NIM Developer Program: Fast reasoning. Rate limits variable."],
+  ["nim","glm-5.3-flash","GLM 5.3 Flash",1048576,32768,"passed","passed","passed","unsupported","fast","ready","NVIDIA NIM Developer Program: Rate limits variable."],
+  ["nim","llama-3.1-70b","Llama 3.1 70B",131072,32768,"passed","passed","passed","unsupported","standard","ready","NVIDIA NIM Developer Program: Rate limits variable."],
+  ["nim","llama-3.2-90b-vision","Llama 3.2 90B Vision",131072,32768,"passed","passed","passed","passed","standard","ready","NVIDIA NIM Developer Program: Vision model. Rate limits variable."],
+  // Azure OpenAI Free Tier (4 models only)
+  ["azure","gpt-4.1-mini","GPT-4.1 Mini",128000,16384,"passed","passed","passed","unsupported","fast","ready","Azure OpenAI Free Tier: Fixed quota, no increases. Mini model only."],
+  ["azure","gpt-5-mini","GPT-5 Mini",128000,16384,"passed","passed","passed","unsupported","fast","ready","Azure OpenAI Free Tier: Fixed quota, no increases. Mini model only."],
+  ["azure","o4-mini","o4 Mini",128000,16384,"passed","passed","passed","unsupported","fast","ready","Azure OpenAI Free Tier: Fixed quota, no increases. Reasoning model."],
+  ["azure","text-embedding-3-small","Text Embedding 3 Small",8192,null,"unsupported","unsupported","unsupported","unsupported","fast","ready","Azure OpenAI Free Tier: Embeddings only."],
 ];
 
 export const MODEL_CATALOG: ModelProfile[] = rows.map(([provider, upstream, label, context, maxOutput, text, tools, schema, vision, latency, status, reason]) => ({
@@ -75,6 +108,17 @@ export const ALIASES: Record<string, string[]> = {
     "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
     "mistral/ministral-8b-2512",
     "mistral/ministral-14b-2512",
+    "groq/llama-3.1-8b-instant",
+    "groq/gpt-oss-20b",
+    "novita/apodex-1.1-mini",
+    "novita/ling-3.1-flash",
+    "hyperbolic/qwen3.8-27b",
+    "inference/gemini-3.7-flash",
+    "inference/gpt-6.1-sol",
+    "nim/nemotron-3.5-lightning",
+    "azure/gpt-4.1-mini",
+    "azure/gpt-5-mini",
+    "azure/o4-mini",
   ],
   "fr-code": [
     "nvidia/poolside/laguna-xs-2.1",
@@ -85,6 +129,13 @@ export const ALIASES: Record<string, string[]> = {
     "openrouter/dots-studio/dots-3-note-preview:free",
     "nvidia/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
     "openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+    "novita/apodex-1.1-mini",
+    "hyperbolic/deepseek-v4.1-flash",
+    "hyperbolic/glm-5.3-flash",
+    "inference/deepseek-v4.1-flash",
+    "inference/glm-5.3-flash",
+    "nim/nemotron-3-ultra-550b",
+    "nim/glm-5.3-flash",
   ],
   "fr-quality": [
     "nvidia/nvidia/nemotron-3-ultra-550b-a55b",
@@ -96,9 +147,27 @@ export const ALIASES: Record<string, string[]> = {
     "nvidia/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
     "openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
     "matilda/matilda",
+    "groq/gpt-oss-120b",
+    "groq/llama-3.3-70b-versatile",
+    "hyperbolic/llama-3.1-405b-fp8",
+    "inference/claude-opus-5.5",
+    "nim/nemotron-3-ultra-550b",
+    "nim/nemotron-3.5-super-vl",
+    "nim/llama-3.1-70b",
+    "azure/gpt-4.1-mini",
   ],
   // Vision is restricted to bindings whose image request was explicitly verified.
-  "fr-vision": ["openrouter/nvidia/nemotron-3.5-super-vl:free", "google/gemini-3.5-flash-lite", "mistral/ministral-8b-2512", "mistral/ministral-14b-2512"],
+  "fr-vision": [
+    "openrouter/nvidia/nemotron-3.5-super-vl:free",
+    "google/gemini-3.5-flash-lite",
+    "mistral/ministral-8b-2512",
+    "mistral/ministral-14b-2512",
+    "hyperbolic/pixtral-12b",
+    "inference/claude-opus-5.5",
+    "inference/gemini-3.7-flash",
+    "nim/nemotron-3.5-super-vl",
+    "nim/llama-3.2-90b-vision",
+  ],
 };
 
 export const MODEL_BY_ID = new Map(MODEL_CATALOG.map((m) => [m.id, m]));
