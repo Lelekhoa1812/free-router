@@ -5,6 +5,7 @@ import { providers } from "@/lib/env";
 
 export type ProviderId = (typeof providers)[number]["id"];
 export type ProviderCredential = { provider: ProviderId; label: string; slot: number; secret: string; fingerprint: string };
+export type DuplicateSlotRef = { provider: ProviderId; providerLabel: string; slot: number; label: string | null };
 type StoredCredential = { v: number; nonce: string; tag: string; body: string };
 
 const aad = (provider: string, slot: number) => `freerouter:provider-credential:${provider}:${slot}:v1`;
@@ -25,17 +26,59 @@ export async function getProviderCredentials(provider?: ProviderId): Promise<Pro
 
 export async function getProviderCredentialSlots() {
   const db = await getDb();
-  const rows = await db.collection<any>("provider_credentials").find({}, { projection: { provider: 1, slot: 1, label: 1, fingerprint: 1, createdAt: 1, updatedAt: 1, lastRetestAt: 1 } }).toArray();
-  const healthRows = await db.collection<any>("credential_health").find({ fingerprint: { $in: rows.map((r) => r.fingerprint) } }).toArray();
+  const [rows, slotLabelRows] = await Promise.all([
+    db.collection<any>("provider_credentials").find({}, { projection: { provider: 1, slot: 1, label: 1, fingerprint: 1, createdAt: 1, updatedAt: 1, lastRetestAt: 1 } }).toArray(),
+    db.collection<any>("provider_slot_labels").find({}, { projection: { provider: 1, slot: 1, label: 1 } }).toArray(),
+  ]);
+  const healthRows = rows.length ? await db.collection<any>("credential_health").find({ fingerprint: { $in: rows.map((r) => r.fingerprint) } }).toArray() : [];
   const health = new Map(healthRows.map((row) => [`${row.provider}:${row.fingerprint}`, row]));
+  const customLabels = new Map(slotLabelRows.map((row) => [`${row.provider}:${row.slot}`, typeof row.label === "string" ? row.label : null]));
+  const byFingerprint = new Map<string, DuplicateSlotRef[]>();
+  for (const row of rows) {
+    const config = providerConfig(row.provider);
+    if (!config || typeof row.fingerprint !== "string") continue;
+    const list = byFingerprint.get(row.fingerprint) ?? [];
+    list.push({ provider: row.provider as ProviderId, providerLabel: config.label, slot: row.slot, label: row.label || null });
+    byFingerprint.set(row.fingerprint, list);
+  }
   return providers.map((provider) => {
     const credentials = new Map(rows.filter((row) => row.provider === provider.id).map((row) => [row.slot, row]));
     const slots = Array.from({ length: provider.count }, (_, i) => {
       const slot = i + 1, row = credentials.get(slot), h = row && health.get(`${provider.id}:${row.fingerprint}`);
-      return { slot, configured: Boolean(row), label: row?.label || null, health: row ? (h?.authStatus || "unknown") : "empty", paused: h?.paused === true, lastSuccessAt: h?.lastSuccessAt || null, lastRetestAt: h?.lastRetestAt || row?.lastRetestAt || null, fingerprint: row?.fingerprint ? `${row.fingerprint.slice(0, 10)}…` : null };
+      const duplicates = row
+        ? (byFingerprint.get(row.fingerprint) ?? [])
+            .filter((entry) => !(entry.provider === provider.id && entry.slot === slot))
+            .sort((a, b) => a.provider === b.provider ? a.slot - b.slot : a.providerLabel.localeCompare(b.providerLabel))
+        : [];
+      return { slot, configured: Boolean(row), label: row?.label || customLabels.get(`${provider.id}:${slot}`) || null, health: row ? (h?.authStatus || "unknown") : "empty", paused: h?.paused === true, lastSuccessAt: h?.lastSuccessAt || null, lastRetestAt: h?.lastRetestAt || row?.lastRetestAt || null, fingerprint: row?.fingerprint ? `${row.fingerprint.slice(0, 10)}…` : null, duplicates };
     });
     return { id: provider.id, label: provider.label, configured: slots.filter((s) => s.configured).length, slots };
   });
+}
+
+export async function renameProviderSlot(provider: ProviderId, slot: number, label: string) {
+  const config = providerConfig(provider);
+  if (!config || !Number.isInteger(slot) || slot < 1 || slot > config.count) throw new Error("invalid_provider_slot");
+  const trimmed = label.trim();
+  if (trimmed.length > 80) throw new Error("invalid_label");
+  const db = await getDb();
+  const now = new Date();
+  const existing = await db.collection<any>("provider_credentials").findOne({ provider, slot }, { projection: { _id: 1 } });
+  if (existing) {
+    const nextLabel = trimmed || `${config.label} key ${slot}`;
+    await Promise.all([
+      db.collection<any>("provider_credentials").updateOne({ provider, slot }, { $set: { label: nextLabel, updatedAt: now } }),
+      db.collection("provider_slot_labels").deleteOne({ provider, slot }),
+    ]);
+    await db.collection("audit_events").insertOne({ action: "provider_credential_renamed", provider, slot, createdAt: now });
+    return { label: nextLabel, configured: true };
+  }
+  if (trimmed) {
+    await db.collection<any>("provider_slot_labels").updateOne({ provider, slot }, { $set: { provider, slot, label: trimmed, updatedAt: now }, $setOnInsert: { createdAt: now } }, { upsert: true });
+    return { label: trimmed, configured: false };
+  }
+  await db.collection("provider_slot_labels").deleteOne({ provider, slot });
+  return { label: null, configured: false };
 }
 
 export async function saveProviderCredential(input: { provider: ProviderId; slot: number; secret: string; label?: string; probeStatus: number }) {
@@ -44,7 +87,10 @@ export async function saveProviderCredential(input: { provider: ProviderId; slot
   const db = await getDb();
   const now = new Date();
   const fp = fingerprint(input.secret);
-  const existing = await db.collection<any>("provider_credentials").findOne({ provider: input.provider, slot: input.slot });
+  const [existing, customLabelRow] = await Promise.all([
+    db.collection<any>("provider_credentials").findOne({ provider: input.provider, slot: input.slot }),
+    db.collection<any>("provider_slot_labels").findOne({ provider: input.provider, slot: input.slot }),
+  ]);
   if (existing?.fingerprint && existing.fingerprint !== fp) {
     await Promise.all([
       db.collection("credential_health").deleteOne({ provider: input.provider, fingerprint: existing.fingerprint }),
@@ -54,10 +100,14 @@ export async function saveProviderCredential(input: { provider: ProviderId; slot
   }
   const encryptedSecret = encryptJson({ secret: input.secret }, aad(input.provider, input.slot));
   const authStatus = input.probeStatus >= 200 && input.probeStatus < 300 ? "healthy" : input.probeStatus === 401 ? "invalid" : input.probeStatus === 429 ? "rate_limited" : "unknown";
-  await db.collection<any>("provider_credentials").updateOne({ provider: input.provider, slot: input.slot }, {
-    $set: { provider: input.provider, slot: input.slot, label: input.label?.trim() || `${config.label} key ${input.slot}`, fingerprint: fp, encryptedSecret, updatedAt: now, probeStatus: input.probeStatus },
-    $setOnInsert: { createdAt: now },
-  }, { upsert: true });
+  const resolvedLabel = input.label?.trim() || existing?.label || customLabelRow?.label || `${config.label} key ${input.slot}`;
+  await Promise.all([
+    db.collection<any>("provider_credentials").updateOne({ provider: input.provider, slot: input.slot }, {
+      $set: { provider: input.provider, slot: input.slot, label: resolvedLabel, fingerprint: fp, encryptedSecret, updatedAt: now, probeStatus: input.probeStatus },
+      $setOnInsert: { createdAt: now },
+    }, { upsert: true }),
+    db.collection("provider_slot_labels").deleteOne({ provider: input.provider, slot: input.slot }),
+  ]);
   await db.collection<any>("credential_health").updateOne({ provider: input.provider, fingerprint: fp }, { $set: { authStatus, lastRetestAt: now, lastErrorStatus: input.probeStatus >= 400 ? input.probeStatus : null, updatedAt: now } }, { upsert: true });
   await db.collection("audit_events").insertOne({ action: existing ? "provider_credential_replaced" : "provider_credential_added", provider: input.provider, slot: input.slot, fingerprint: fp.slice(0, 10), createdAt: now });
   return { authStatus, fingerprint: fp.slice(0, 10) };
@@ -69,6 +119,7 @@ export async function removeProviderCredential(provider: ProviderId, slot: numbe
   if (!existing) return false;
   await Promise.all([
     db.collection("provider_credentials").deleteOne({ provider, slot }),
+    db.collection("provider_slot_labels").deleteOne({ provider, slot }),
     db.collection("credential_health").deleteOne({ provider, fingerprint: existing.fingerprint }),
     db.collection("model_bindings").deleteMany({ provider, fingerprint: existing.fingerprint }),
     db.collection("embedding_bindings").deleteMany({ provider, fingerprint: existing.fingerprint }),

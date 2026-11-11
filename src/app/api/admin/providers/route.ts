@@ -2,7 +2,7 @@ import { getAdminSession } from "@/lib/auth/admin";
 import { getDb } from "@/lib/db";
 import { readJson, sameOrigin } from "@/lib/http";
 import { env } from "@/lib/env";
-import { getProviderCredentials, getProviderCredentialSlots, probeProviderCredential, removeProviderCredential, saveProviderCredential, type ProviderId } from "@/lib/providers/credentials";
+import { getProviderCredentials, getProviderCredentialSlots, probeProviderCredential, removeProviderCredential, renameProviderSlot, saveProviderCredential, type ProviderId } from "@/lib/providers/credentials";
 
 export const runtime = "nodejs";
 
@@ -36,6 +36,14 @@ export async function POST(request: Request) {
     if (value.action === "remove") {
       const removed = await removeProviderCredential(providerId, slot);
       return Response.json({ ok: true, removed }, { headers: { "cache-control": "no-store" } });
+    }
+
+    if (value.action === "rename") {
+      if (typeof value.label !== "string") return Response.json({ error: "invalid_label" }, { status: 400 });
+      const label = value.label.trim();
+      if (label.length > 80) return Response.json({ error: "invalid_label" }, { status: 400 });
+      const renamed = await renameProviderSlot(providerId, slot, label);
+      return Response.json({ ok: true, label: renamed.label }, { headers: { "cache-control": "no-store" } });
     }
 
     const credential = (await getProviderCredentials(providerId)).find((item) => item.slot === slot);

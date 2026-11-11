@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getAdminSession: vi.fn(), getProviderCredentials: vi.fn(), getProviderCredentialSlots: vi.fn(),
-  probeProviderCredential: vi.fn(), removeProviderCredential: vi.fn(), saveProviderCredential: vi.fn(), getDb: vi.fn(),
+  probeProviderCredential: vi.fn(), removeProviderCredential: vi.fn(), renameProviderSlot: vi.fn(), saveProviderCredential: vi.fn(), getDb: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/admin", () => ({ getAdminSession: mocks.getAdminSession }));
@@ -12,6 +12,7 @@ vi.mock("@/lib/providers/credentials", () => ({
   getProviderCredentialSlots: mocks.getProviderCredentialSlots,
   probeProviderCredential: mocks.probeProviderCredential,
   removeProviderCredential: mocks.removeProviderCredential,
+  renameProviderSlot: mocks.renameProviderSlot,
   saveProviderCredential: mocks.saveProviderCredential,
 }));
 
@@ -61,5 +62,16 @@ describe("admin provider key management", () => {
     const response = await POST(request({ provider: "nvidia", slot: 2, action: "remove" }));
     expect(response.status).toBe(200);
     expect(mocks.removeProviderCredential).toHaveBeenCalledWith("nvidia", 2);
+  });
+
+  it("renames a slot and rejects invalid labels", async () => {
+    mocks.renameProviderSlot.mockResolvedValue({ label: "Work account", configured: true });
+    const response = await POST(request({ provider: "nvidia", slot: 1, action: "rename", label: " Work account " }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, label: "Work account" });
+    expect(mocks.renameProviderSlot).toHaveBeenCalledWith("nvidia", 1, "Work account");
+
+    const invalid = await POST(request({ provider: "nvidia", slot: 1, action: "rename", label: "x".repeat(81) }));
+    expect(invalid.status).toBe(400);
   });
 });
