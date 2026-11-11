@@ -1,9 +1,13 @@
 import { cookies } from "next/headers";
+import type { NextResponse } from "next/server";
 import { verifySignature, signValue } from "@/lib/crypto";
 import { currentAuthEpoch, normalizeAdminEmail } from "@/lib/auth/access";
 import { getDb } from "@/lib/db";
 
 const COOKIE = "fr_admin";
+export const ADMIN_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
+export const ADMIN_SESSION_TTL_MS = ADMIN_SESSION_TTL_SECONDS * 1000;
+const ADMIN_SESSION_REFRESH_INTERVAL_MS = 24 * 60 * 60_000;
 type SessionData = { exp: number; epoch: number; email: string | null };
 
 async function parseSession(token: string | undefined): Promise<SessionData | null> {
@@ -22,18 +26,27 @@ async function parseSession(token: string | undefined): Promise<SessionData | nu
   } catch { return null; }
 }
 
-export async function getAdminSessionEmail() {
+async function getValidAdminSession() {
   const token = (await cookies()).get(COOKIE)?.value;
-  return (await parseSession(token))?.email ?? null;
+  return parseSession(token);
+}
+
+export async function getAdminSessionEmail() {
+  return (await getValidAdminSession())?.email ?? null;
 }
 export async function getAdminSession() {
-  const token = (await cookies()).get(COOKIE)?.value;
-  return Boolean(await parseSession(token));
+  return Boolean(await getValidAdminSession());
 }
 export async function createAdminSession(email: string | null, epoch?: number) {
   const sessionEpoch = epoch ?? await currentAuthEpoch();
-  const payload = Buffer.from(JSON.stringify({ exp: Date.now() + 12 * 60 * 60_000, epoch: sessionEpoch, email: email === null ? null : normalizeAdminEmail(email) })).toString("base64url");
+  const payload = Buffer.from(JSON.stringify({ exp: Date.now() + ADMIN_SESSION_TTL_MS, epoch: sessionEpoch, email: email === null ? null : normalizeAdminEmail(email) })).toString("base64url");
   return `${payload}.${signValue(payload)}`;
 }
-export function adminCookieOptions() { return { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "strict" as const, path: "/", maxAge: 43200 }; }
+export async function refreshAdminSession(response: NextResponse) {
+  const session = await getValidAdminSession();
+  if (!session || session.exp - Date.now() > ADMIN_SESSION_TTL_MS - ADMIN_SESSION_REFRESH_INTERVAL_MS) return false;
+  response.cookies.set(COOKIE, await createAdminSession(session.email, session.epoch), adminCookieOptions());
+  return true;
+}
+export function adminCookieOptions() { return { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax" as const, path: "/", maxAge: ADMIN_SESSION_TTL_SECONDS }; }
 export const adminCookieName = COOKIE;

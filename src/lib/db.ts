@@ -7,9 +7,13 @@ async function connectDb(): Promise<Db> {
   if (!env.mongoUri) throw new Error("MongoDB is not configured");
   globalThis._freeRouterMongo ??= new MongoClient(env.mongoUri, {
     maxPoolSize: 3, minPoolSize: 0, maxConnecting: 1,
-    serverSelectionTimeoutMS: 4000, connectTimeoutMS: 4000, socketTimeoutMS: 8000,
+    serverSelectionTimeoutMS: 8000, connectTimeoutMS: 8000, socketTimeoutMS: 10000,
     retryWrites: true, appName: "FreeRouter",
-  }).connect();
+  }).connect().catch((error) => {
+    // Clear cached promise on transient cold-start failures so subsequent requests can reconnect.
+    globalThis._freeRouterMongo = undefined;
+    throw error;
+  });
   const client = await globalThis._freeRouterMongo;
   return client.db(env.mongoDb);
 }
@@ -44,7 +48,10 @@ export async function ensureIndexes() {
       db.collection("probe_results").createIndex({ createdAt: -1 }, { name: "probe_time" }),
       db.collection("probe_results").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0, name: "probe_ttl" }),
     ]);
-  })();
+  })().catch((error) => {
+    globalThis._freeRouterIndexes = undefined;
+    throw error;
+  });
   return globalThis._freeRouterIndexes;
 }
 export async function getDb(): Promise<Db> { const db=await connectDb(); await ensureIndexes(); return db; }
