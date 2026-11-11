@@ -9,3 +9,5 @@ FreeRouter bundles small local copies of provider marks so the dashboard does no
 | OrcaRouter | `public/brand/providers/orcarouter.png` | [OrcaRouter site icon](https://www.orcarouter.ai/apple-touch-icon.png), linked from the official site |
 
 These assets were fetched from the provider-owned websites/CDNs on 4 November 2026. Keep the upstream attribution when replacing or resizing an asset, and do not use third-party logo aggregators as a source of truth.
+
+Last reviewed: 11 November 2026.

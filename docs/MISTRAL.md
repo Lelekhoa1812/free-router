@@ -1,6 +1,6 @@
 # Mistral AI integration
 
-Reviewed 5 November 2026. This is a dated snapshot, not a guarantee of availability or price.
+Reviewed 11 November 2026. This is a dated snapshot, not a guarantee of availability or price.
 
 ## Access and limits
 

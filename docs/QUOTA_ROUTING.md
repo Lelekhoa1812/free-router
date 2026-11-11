@@ -1,6 +1,6 @@
 # Quota routing
 
-Last reviewed: 4 November 2026.
+Last reviewed: 11 November 2026.
 
 FreeRouter keeps a local quota ledger in Upstash Redis. It estimates each request's token cost, reserves that estimate atomically, and settles the reservation from provider-reported usage when the response completes. The ledger is a gateway admission layer; it is not a live feed from Google, NVIDIA, OpenRouter, Matilda, ZenMux, OrcaRouter, Mistral, or TokenHarbor.
 
@@ -24,7 +24,7 @@ At request time, the gateway removes candidates that are not ready, lack a passe
 
 The catalog tests require every ready text model to appear in at least one Auto category, require each category to retain a routable catalog candidate, and ensure every vision tier member has a passed vision capability. Experimental and unavailable models remain out of these groups until their readiness status changes through verified evidence.
 
-`fr-code` also requires a catalog context window of at least 200,000 tokens, matching Cursor's documented normal context window ([Cursor Models](https://docs.cursor.com/advanced/models)). Cursor's custom OpenAI-compatible models may use an assumed context window that the provider does not support, so this tier excludes providers without a verified context size and models below 200k. Matilda remains available in other applicable tiers; it is excluded from `fr-code` because its gateway request limit is 16,000 characters per message and its token context limit is undocumented.
+`fr-code` also requires a catalog context window of at least 200,000 tokens, matching Cursor's documented normal context window ([Cursor Models](https://docs.cursor.com/advanced/models)). Cursor's custom OpenAI-compatible models may use an assumed context window that the provider does not support, so this tier excludes providers without a verified context size and models below 200k. Matilda remains available in other applicable tiers; it is excluded from `fr-code` because its gateway request limit is 16,000 characters per message and its token context limit is undocumented. ZenMux, OrcaRouter, and TokenHarbor models are currently experimental and not included in any alias tier.
 
 ## Configuration
 
@@ -79,6 +79,9 @@ A group is a quota boundary, not a UI label. Put keys that share a real provider
 | OpenRouter | `group` | `UTC` | `rpm: 20`, `rpd: 50` |
 | Matilda (Maincode) | `model` | `UTC` | `rpm: 5` |
 | Mistral AI | `model` | `UTC` | `rpm: 5` |
+| ZenMux | `group` | `UTC` | `rpm: 20` |
+| OrcaRouter | `group` | `UTC` | `rpm: 20` |
+| TokenHarbor | `group` | `UTC` | `rpm: 20` |
 
 Mistral's [usage and limits](https://docs.mistral.ai/admin/billing-usage/usage-limits) are set per organization and model; inspect the account's current limits rather than assuming that separate keys have independent quotas. Free mode offers included usage for evaluation, but the public documentation does not establish a universal credit amount or per-model allowance. The five-RPM FreeRouter default is a local guard, not a provider promise, and the default `observe` mode does not enforce it. Configure the actual limits and use `enforce` if local admission is required. A 429 was observed during testing without a retry header.
 
