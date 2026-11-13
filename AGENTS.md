@@ -6,6 +6,12 @@ This file applies to everyone working in `free-router`, human or automated. Read
 
 [`.github/CODEOWNERS`](.github/CODEOWNERS) is the review-routing source of truth; [MAINTAINERS.md](MAINTAINERS.md) maps each area to its reviewers. Do not merge a change that crosses an area without that owner's review. Update CODEOWNERS and MAINTAINERS.md in the same pull request when ownership changes.
 
+## Delivery
+
+The repository owner requests direct shipping by default: after verification, push completed work to `origin/main` and deploy the ready app directly to Vercel production. Do not stop after pushing a feature branch or opening a pull request. Follow any more specific shipping instruction from the user for the current task.
+
+Before reporting completion, check staged, unstaged and untracked files, local commits, and stashes for unshipped work. Report any work deliberately left unshipped.
+
 ## Pull requests
 
 - Title: `<type>(<scope>): <summary>`, at most 72 characters, no trailing period.

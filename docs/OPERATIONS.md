@@ -46,11 +46,11 @@ After building a preview deployment, run `FREEROUTER_BASE_URL=https://<preview-h
 
 Matilda was called directly and through the local gateway on 4 November 2026. The direct provider calls confirmed native OpenAI SDK compatibility for Chat, tools and structured output. The local gateway smoke passed all supported paths above. Deployed Matilda certification and Cursor testing remain pending.
 
-On 2 November 2026, an initial streaming check covered a subset of catalog-ready bindings; the complete current ready set is below. This is a point-in-time check using the first configured credential for each provider; it is not a quota or all-credential certification. Six Google models passed, five of six tested NVIDIA models passed, and all five tested OpenRouter models passed. NVIDIA `nvidia/nemotron-3.5-lightning-30b-a3b` returned reasoning-only output without visible assistant content and was removed from the ready/public list. The tested alias order now skips it and continues to Laguna XS. This is a point-in-time check using the first configured credential for each provider; it is not a quota or all-credential certification.
+On 2 November 2026, an initial streaming check covered a subset of catalog-ready bindings. Six Google models passed, five of six tested NVIDIA models passed, and all five tested OpenRouter models passed. NVIDIA `nvidia/nemotron-3.5-lightning-30b-a3b` returned reasoning-only output without visible assistant content and was removed from the ready/public list. The tested alias order now skips it and continues to Laguna XS. This is a point-in-time check using the first configured credential for each provider; it is not a quota or all-credential certification.
 
-The currently public concrete-model seed set after that check is:
+The current catalog-ready concrete-model seed set is below. This inventory reflects catalog admission state and does not establish a fresh live streaming check for later additions. See [implementation status](IMPLEMENTATION_STATUS.md) for dated probe evidence and remaining verification gates.
 
-| Provider | Ready concrete models passing basic streaming text check |
+| Provider | Catalog-ready concrete models |
 |---|---|
 | Google AI Studio | `gemini-3.1-flash-lite-preview`, `gemini-3.1-flash-lite`, `gemini-3.5-flash`, `gemini-3.5-flash-lite`, `gemini-3.6-flash` |
 | NVIDIA NIM | `nvidia/nemotron-3.5-super-vl-120b-a12b`, `nvidia/nemotron-3-ultra-550b-a55b`, `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`, `poolside/laguna-xs-2.1` |
