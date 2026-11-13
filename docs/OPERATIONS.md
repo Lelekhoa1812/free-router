@@ -1,6 +1,6 @@
 # FreeRouter operations guide
 
-Last reviewed: 11 November 2026. Provider catalogs, access, free quotas, and deployed behavior change. Re-run the documented checks before enabling a model or claiming compatibility.
+Last reviewed: 13 November 2026. Provider catalogs, access, free quotas, and deployed behavior change. Re-run the documented checks before enabling a model or claiming compatibility.
 
 ## Service layout
 
@@ -46,17 +46,22 @@ After building a preview deployment, run `FREEROUTER_BASE_URL=https://<preview-h
 
 Matilda was called directly and through the local gateway on 4 November 2026. The direct provider calls confirmed native OpenAI SDK compatibility for Chat, tools and structured output. The local gateway smoke passed all supported paths above. Deployed Matilda certification and Cursor testing remain pending.
 
-On 2 November 2026, 17 catalog-ready bindings were checked with streaming generation. Six Google models passed, five of six tested NVIDIA models passed, and all five tested OpenRouter models passed. NVIDIA `nvidia/nemotron-3.5-lightning-30b-a3b` returned reasoning-only output without visible assistant content and was removed from the ready/public list. The tested alias order now skips it and continues to Laguna XS. This is a point-in-time check using the first configured credential for each provider; it is not a quota or all-credential certification.
+On 2 November 2026, an initial streaming check covered a subset of catalog-ready bindings; the complete current ready set is below. This is a point-in-time check using the first configured credential for each provider; it is not a quota or all-credential certification. Six Google models passed, five of six tested NVIDIA models passed, and all five tested OpenRouter models passed. NVIDIA `nvidia/nemotron-3.5-lightning-30b-a3b` returned reasoning-only output without visible assistant content and was removed from the ready/public list. The tested alias order now skips it and continues to Laguna XS. This is a point-in-time check using the first configured credential for each provider; it is not a quota or all-credential certification.
 
 The currently public concrete-model seed set after that check is:
 
-| Provider | Models passing basic streaming text check |
+| Provider | Ready concrete models passing basic streaming text check |
 |---|---|
 | Google AI Studio | `gemini-3.1-flash-lite-preview`, `gemini-3.1-flash-lite`, `gemini-3.5-flash`, `gemini-3.5-flash-lite`, `gemini-3.6-flash` |
 | NVIDIA NIM | `nvidia/nemotron-3.5-super-vl-120b-a12b`, `nvidia/nemotron-3-ultra-550b-a55b`, `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`, `poolside/laguna-xs-2.1` |
 | OpenRouter | `nvidia/nemotron-3.5-super-vl:free`, `dots-studio/dots-3-note-preview:free`, `cohere/north-mini-code:free`, `nvidia/nemotron-3-ultra-550b-a55b:free`, `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` |
 | Mistral AI | `mistral/ministral-8b-2512`, `mistral/ministral-14b-2512` |
 | Matilda (Maincode) | `matilda/matilda` |
+| Groq | `groq/llama-3.3-70b-versatile`, `groq/gpt-oss-120b`, `groq/gpt-oss-20b`, `groq/llama-3.1-8b-instant` |
+| Novita AI | `novita/apodex-1.1-mini`, `novita/ling-3.1-flash` |
+| Hyperbolic | `hyperbolic/deepseek-v4.1-flash`, `hyperbolic/glm-5.3-flash`, `hyperbolic/qwen3.8-27b`, `hyperbolic/pixtral-12b` |
+| Inference.net | `inference/gpt-6.1-sol`, `inference/claude-opus-5.5`, `inference/gemini-3.7-flash`, `inference/deepseek-v4.1-flash`, `inference/glm-5.3-flash` |
+| Azure OpenAI | `azure/gpt-4.1-mini`, `azure/gpt-5-mini`, `azure/o4-mini` |
 
 On 3 November 2026, the obsolete/unavailable entries `google/gemini-2.5-flash`, `google/gemini-2.5-flash-lite`, `google/gemini-2.5-pro`, `nvidia/nvidia/nemotron-3.5-lightning-30b-a3b`, `nvidia/moonshotai/kimi-k2.6`, `nvidia/nvidia/nemotron-nano-3-30b-a3b`, `nvidia/nvidia/nemotron-3-super-120b-a12b`, and both `openrouter/thinkingmachines/inkling*:free` variants were removed from the registry; the NIM Lightning entry was also removed from `fr-fast`. A regression test ensures none return to the registry or aliases accidentally.
 

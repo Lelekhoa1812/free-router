@@ -2,7 +2,7 @@
 
 This is the dated evidence for FreeRouter's model-specific `POST /v1/embeddings` surface. Direct provider probes and OpenAI TypeScript SDK probes were run on **4 November 2026** using the configured credentials. No credential values, prompt text, or vectors are recorded here. Availability, free entitlement, dimensions, and rate limits may change; the dashboard's per-binding health is the current operational signal.
 
-Last reviewed: 11 November 2026.
+Last reviewed: 13 November 2026.
 
 ## Enabled models
 

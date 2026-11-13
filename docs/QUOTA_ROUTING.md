@@ -1,6 +1,6 @@
 # Quota routing
 
-Last reviewed: 11 November 2026.
+Last reviewed: 13 November 2026.
 
 FreeRouter keeps a local quota ledger in Upstash Redis. It estimates each request's token cost, reserves that estimate atomically, and settles the reservation from provider-reported usage when the response completes. The ledger is a gateway admission layer; it is not a live feed from Google, NVIDIA, OpenRouter, Matilda, ZenMux, OrcaRouter, Mistral, TokenHarbor, Groq, Novita, Hyperbolic, Inference.net, or Azure OpenAI.
 
@@ -90,7 +90,7 @@ A group is a quota boundary, not a UI label. Put keys that share a real provider
 
 Mistral's [usage and limits](https://docs.mistral.ai/admin/billing-usage/usage-limits) are set per organization and model; inspect the account's current limits rather than assuming that separate keys have independent quotas. Free mode offers included usage for evaluation, but the public documentation does not establish a universal credit amount or per-model allowance. The five-RPM FreeRouter default is a local guard, not a provider promise, and the default `observe` mode does not enforce it. Configure the actual limits and use `enforce` if local admission is required. A 429 was observed during testing without a retry header.
 
-### Published free conditions (reviewed 11 November 2026)
+### Published free conditions (reviewed 13 November 2026)
 
 These readings are dated public documentation, not a live balance. The Quota page shows the same summary on each provider. A refilled rate window is not an allowance that runs out; a credit balance is.
 
