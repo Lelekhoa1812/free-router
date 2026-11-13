@@ -35,6 +35,55 @@ describe("Chat Completions streaming startup",()=>{
   });
   afterEach(()=>vi.restoreAllMocks());
 
+  it.each(["low","medium","high"])("forwards pinned Nemotron %s reasoning without rejecting or downgrading it",async(effort)=>{
+    mocks.getProviderCredentials.mockReturnValue([{provider:"nvidia",slot:1,secret:"test-secret",fingerprint:"test-fingerprint"}]);
+    mocks.upstreamChat.mockResolvedValue(new Response([
+      `data: ${JSON.stringify({choices:[{index:0,delta:{content:"FR_OK"},finish_reason:null}]})}\n\n`,
+      `data: ${JSON.stringify({choices:[{index:0,delta:{},finish_reason:"stop"}]})}\n\n`,
+      "data: [DONE]\n\n",
+    ].join(""),{status:200,headers:{"content-type":"text/event-stream"}}));
+    const response=await POST(new Request("https://freerouter.test/v1/chat/completions",{
+      method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({model:"nvidia/nvidia/nemotron-3.5-super-vl-120b-a12b",messages:[{role:"user",content:"Reply FR_OK"}],reasoning_effort:effort,stream:true}),
+    }));
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("FR_OK");
+    expect(mocks.upstreamChat).toHaveBeenCalledOnce();
+    expect(mocks.upstreamChat.mock.calls[0][0].id).toBe("nvidia/nvidia/nemotron-3.5-super-vl-120b-a12b");
+    expect(mocks.upstreamChat.mock.calls[0][2].reasoning_effort).toBe(effort);
+  });
+
+  it("still rejects unsupported minimal reasoning on pinned Nemotron before dispatch",async()=>{
+    const response=await POST(new Request("https://freerouter.test/v1/chat/completions",{
+      method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({model:"nvidia/nvidia/nemotron-3.5-super-vl-120b-a12b",messages:[{role:"user",content:"hello"}],reasoning_effort:"minimal"}),
+    }));
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({error:{code:"unsupported_capability"}});
+    expect(mocks.upstreamChat).not.toHaveBeenCalled();
+  });
+
+  it.each(["low","minimal"])("keeps Nemotron alias %s effort semantics",async(effort)=>{
+    const oldAlias=ALIASES["fr-fast"];
+    ALIASES["fr-fast"]=["nvidia/nvidia/nemotron-3.5-super-vl-120b-a12b"];
+    mocks.getProviderCredentials.mockReturnValue([{provider:"nvidia",slot:1,secret:"test-secret",fingerprint:"test-fingerprint"}]);
+    mocks.upstreamChat.mockResolvedValue(new Response([
+      `data: ${JSON.stringify({choices:[{index:0,delta:{content:"FR_OK"},finish_reason:null}]})}\n\n`,
+      `data: ${JSON.stringify({choices:[{index:0,delta:{},finish_reason:"stop"}]})}\n\n`,
+      "data: [DONE]\n\n",
+    ].join(""),{status:200,headers:{"content-type":"text/event-stream"}}));
+    try {
+      const response=await POST(new Request("https://freerouter.test/v1/chat/completions",{
+        method:"POST",headers:{"content-type":"application/json"},
+        body:JSON.stringify({model:"fr-fast",messages:[{role:"user",content:"Reply FR_OK"}],reasoning_effort:effort,stream:true}),
+      }));
+      expect(response.status).toBe(200);
+      expect(await response.text()).toContain("FR_OK");
+      expect(mocks.upstreamChat).toHaveBeenCalledOnce();
+      expect(mocks.upstreamChat.mock.calls[0][2].reasoning_effort).toBe(effort==="low"?"low":undefined);
+    } finally { ALIASES["fr-fast"]=oldAlias; }
+  });
+
   it("opens SSE and emits a heartbeat before slow upstream headers arrive",async()=>{
     mocks.upstreamChat.mockImplementation(async()=>{
       await new Promise(resolve=>setTimeout(resolve,1200));

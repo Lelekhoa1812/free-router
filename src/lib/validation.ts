@@ -87,7 +87,7 @@ const messageSchema = z.looseObject({
 
 const toolFunctionSchema = z.looseObject({
   name: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/, "function name must match [a-zA-Z0-9_-]{1,64}"),
-  description: z.string().max(2000).optional(),
+  description: z.string().max(16_384).optional(),
   parameters: z.record(z.string(), z.unknown()).optional(),
   strict: z.boolean().optional(),
 });
@@ -126,7 +126,7 @@ const chatRequestSchema = z.strictObject({
   temperature: z.number().min(0).max(2).optional(),
   top_p: z.number().min(0).max(1).optional(),
   stop: z.union([z.string().max(4000), z.array(z.string().max(4000)).max(4)]).optional(),
-  tools: z.array(functionToolSchema).max(128).optional(),
+  tools: z.array(functionToolSchema).optional(),
   tool_choice: toolChoiceSchema.optional(),
   parallel_tool_calls: z.boolean().optional(),
   response_format: responseFormatSchema.optional(),
@@ -176,8 +176,8 @@ const responsesSchema = z.strictObject({
   previous_response_id: z.string().min(1).max(200).optional(),
   stream: z.boolean().optional(),
   store: z.boolean().optional(),
-  tools: z.array(z.looseObject({ type: z.string().min(1).max(32) })).max(128).optional(),
-  tool_choice: z.union([z.enum(["none", "auto", "required"]), z.looseObject({ type: z.literal("function"), name: z.string().min(1).max(64) })]).optional(),
+  tools: z.array(z.looseObject({ type: z.string().min(1).max(32) })).optional(),
+  tool_choice: z.union([z.enum(["none", "auto", "required"]), z.looseObject({ type: z.literal("function"), name: z.string().min(1).max(128), namespace: z.string().min(1).max(256).optional() })]).optional(),
   max_output_tokens: z.int().positive().max(2_000_000).optional(),
   reasoning: z.looseObject({ effort: z.enum(["minimal", "low", "medium", "high"]).optional() }).optional(),
   text: z.looseObject({
@@ -189,7 +189,13 @@ const responsesSchema = z.strictObject({
   parallel_tool_calls: z.boolean().optional(),
   metadata: z.record(z.string().max(64), z.string().max(512)).refine((value) => Object.keys(value).length <= 16, "metadata must contain at most 16 entries").optional(),
   truncation: z.literal("disabled").optional(),
-  include: z.array(z.string()).length(0, "Requested include fields are not available for this provider profile").optional(),
+  // The Chat adapter emits no reasoning items, so this selector has no extra
+  // output to attach. Accept the request without inventing encrypted state.
+  include: z.array(z.string()).max(8).refine((fields) => fields.every((field) => field === "reasoning.encrypted_content"), "Requested include fields are not available for this provider profile").optional(),
+  prompt_cache_key: z.string().max(256).optional(),
+  // Client correlation metadata is validated but never forwarded to providers
+  // or treated as an authentication, accounting, or stored-response identity.
+  client_metadata: z.record(z.string().max(128), z.string().max(16_384)).refine((value) => Object.keys(value).length <= 64, "client_metadata must contain at most 64 entries").optional(),
 });
 
 export interface ResponsesRequest {
@@ -199,13 +205,25 @@ export interface ResponsesRequest {
   previous_response_id?: string;
   stream?: boolean;
   store?: boolean;
-  tools?: Array<{ type: string; name?: string; description?: string; parameters?: Record<string, unknown>; strict?: boolean }>;
-  tool_choice?: string | { type: "function"; name: string };
+  tools?: ResponsesTool[];
+  tool_choice?: string | { type: "function"; name: string; namespace?: string };
   max_output_tokens?: number;
   reasoning?: { effort?: "minimal" | "low" | "medium" | "high" };
   text?: { format?: { type: "text" | "json_object" } | { type: "json_schema"; name: string; schema: Record<string, unknown>; strict?: boolean } };
   parallel_tool_calls?: boolean;
   metadata?: Record<string, string>;
+  include?: string[];
+  prompt_cache_key?: string;
+  client_metadata?: Record<string, string>;
+}
+
+export interface ResponsesTool {
+  type: string;
+  name?: string;
+  description?: string;
+  parameters?: Record<string, unknown>;
+  strict?: boolean;
+  tools?: ResponsesTool[];
 }
 
 /** Validate an OpenAI-shaped Responses request before conversation assembly. */

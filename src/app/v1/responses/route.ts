@@ -5,31 +5,43 @@ import { authenticateClient, bindInternalClient } from "@/lib/auth/client";
 import { encryptJson, decryptJson } from "@/lib/crypto";
 import { readJson, jsonError } from "@/lib/http";
 import { parseResponsesRequest, RequestValidationError } from "@/lib/validation";
+import { responsesTools, type ResponsesTools } from "@/lib/responses-tools";
 import { POST as chatCompletions } from "@/app/v1/chat/completions/route";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 type ChatMessage = { role: string; content?: unknown; tool_calls?: unknown[]; tool_call_id?: string; name?: string };
-function convertInput(input: unknown): ChatMessage[] {
+function convertInput(input: unknown, tools: ResponsesTools): ChatMessage[] {
   if (typeof input === "string") return [{ role: "user", content: input }];
   if (!Array.isArray(input)) throw new Error("input must be a string or array of items");
   const out: ChatMessage[] = [];
   for (const item of input as any[]) {
     if (!item || typeof item !== "object") throw new Error("Invalid input item");
-    if (["system","developer","user","assistant"].includes(item.role) && (item.type === "message" || item.role)) { const parts=Array.isArray(item.content)?item.content.map((p:any)=>p?.type==="input_text"?{type:"text",text:p.text}:p?.type==="input_image"?{type:"image_url",image_url:p.image_url}:p):item.content;out.push({ role: item.role, content: parts ?? "" }); continue; }
-    if (item.type === "function_call") { out.push({ role: "assistant", content: null, tool_calls: [{ id: item.call_id, type: "function", function: { name: item.name, arguments: item.arguments } }] }); continue; }
-    if (item.type === "function_call_output") { out.push({ role: "tool", tool_call_id: item.call_id, content: item.output }); continue; }
+    if (["system","developer","user","assistant"].includes(item.role) && (item.type === "message" || item.role)) { const parts=Array.isArray(item.content)?item.content.map((p:any)=>p?.type==="input_text"||p?.type==="output_text"?{type:"text",text:p.text}:p?.type==="input_image"?{type:"image_url",image_url:p.image_url}:p):item.content;out.push({ role: item.role, content: parts ?? "" }); continue; }
+    if (item.type === "function_call") { out.push({ role: "assistant", content: null, tool_calls: [{ id: item.call_id, type: "function", function: { name: tools.encode(item.name, item.namespace), arguments: item.arguments } }] }); continue; }
+    if (item.type === "function_call_output") {
+      let output = item.output;
+      if (Array.isArray(output)) {
+        if (output.some((part:any)=>!["input_text","output_text","text"].includes(part?.type)||typeof part.text!=="string")) throw new Error("Invalid input: tool outputs support text parts only");
+        output = output.map((part:any)=>part.text).join("\n");
+      }
+      out.push({ role: "tool", tool_call_id: item.call_id, content: output }); continue;
+    }
     throw new Error(`Unsupported Responses input item: ${String(item.type || "unknown")}`);
   }
   return out;
 }
-function responseObject(id: string, model: string, message: any, usage: any, created: number,input:unknown,metadata?:Record<string,string>) {
+function responseObject(id: string, model: string, message: any, usage: any, created: number,input:unknown,tools:ResponsesTools,metadata?:Record<string,string>) {
   const output: any[] = [];
   if (message?.content != null) output.push({ id: `msg_${id}`, type: "message", status: "completed", role: "assistant", content: [{ type: "output_text", text: message.content, annotations: [] }] });
-  for (const c of message?.tool_calls || []) output.push({ id: `fc_${c.id}`, type: "function_call", status: "completed", call_id: c.id, name: c.function.name, arguments: c.function.arguments });
+  for (const c of message?.tool_calls || []) {
+    const identity = tools.decode(c.function.name);
+    if (!identity) throw new Error("The upstream returned an undeclared function");
+    output.push({ id: `fc_${c.id}`, type: "function_call", status: "completed", call_id: c.id, ...identity, arguments: c.function.arguments });
+  }
   return { id, object: "response", created_at: created, status: "completed", error: null, incomplete_details: null, model, input, metadata:metadata||{}, output, output_text: typeof message?.content === "string" ? message.content : "", usage: usage ? { input_tokens: usage.prompt_tokens ?? 0, output_tokens: usage.completion_tokens ?? 0, total_tokens: usage.total_tokens ?? 0 } : null, store: true };
 }
 
-function streamResponses(chat: Response, options: { id: string; model: string; input: unknown; metadata?: Record<string,string>; created: number; store: boolean; messages: ChatMessage[]; ownerId: string }) {
+function streamResponses(chat: Response, options: { id: string; model: string; input: unknown; metadata?: Record<string,string>; created: number; store: boolean; messages: ChatMessage[]; ownerId: string; tools: ResponsesTools }) {
   const encoder = new TextEncoder();
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
   let closed = false;
@@ -82,13 +94,16 @@ function streamResponses(chat: Response, options: { id: string; model: string; i
               if (call.function?.name) prior.name += call.function.name;
               if (call.function?.arguments) prior.arguments += call.function.arguments;
               if (!prior.id) throw new Error("The upstream tool call has no stable call ID.");
-              if (!prior.added) {
+              const identity = options.tools.decode(prior.name);
+              const wasAdded = prior.added;
+              if (!prior.added && identity && prior.name) {
                 prior.added = true;
                 prior.itemId = `fc_${prior.id}`;
                 prior.outputIndex = nextOutputIndex++;
-                send(controller, "response.output_item.added", { output_index: prior.outputIndex, item: { id: prior.itemId, type: "function_call", status: "in_progress", call_id: prior.id, name: prior.name, arguments: "" } });
+                send(controller, "response.output_item.added", { output_index: prior.outputIndex, item: { id: prior.itemId, type: "function_call", status: "in_progress", call_id: prior.id, ...identity, arguments: "" } });
               }
-              if (call.function?.arguments) send(controller, "response.function_call_arguments.delta", { item_id: prior.itemId, output_index: prior.outputIndex, delta: call.function.arguments });
+              const delta = wasAdded ? call.function?.arguments : prior.arguments;
+              if (prior.added && delta) send(controller, "response.function_call_arguments.delta", { item_id: prior.itemId, output_index: prior.outputIndex, delta });
               tools.set(index, prior);
             }
             if (choice?.finish_reason) finishReason = choice.finish_reason;
@@ -123,11 +138,13 @@ function streamResponses(chat: Response, options: { id: string; model: string; i
             send(controller, "response.output_item.done", { output_index: messageOutputIndex, item });
           }
           for (const tool of tools.values()) {
-            const item = { id: tool.itemId, type: "function_call", status: "completed", call_id: tool.id, name: tool.name, arguments: tool.arguments };
+            const identity = options.tools.decode(tool.name);
+            if (!tool.added || !identity) throw new Error("The upstream returned an undeclared function");
+            const item = { id: tool.itemId, type: "function_call", status: "completed", call_id: tool.id, ...identity, arguments: tool.arguments };
             send(controller, "response.function_call_arguments.done", { item_id: item.id, output_index: tool.outputIndex, arguments: tool.arguments });
             send(controller, "response.output_item.done", { output_index: tool.outputIndex, item });
           }
-          const complete: any = responseObject(responseId, options.model, message, usage, options.created, options.input, options.metadata);
+          const complete: any = responseObject(responseId, options.model, message, usage, options.created, options.input, options.tools, options.metadata);
           complete.store = options.store;
           const outputByIndex: any[] = [];
           if (message.content !== null) outputByIndex[messageOutputIndex] = complete.output.find((item: any) => item.type === "message");
@@ -179,24 +196,24 @@ export async function POST(request: Request) {
       if (!record) return jsonError(404,"Response is unavailable","response_not_found",rid);
       const data = decryptJson<{ messages: ChatMessage[] }>(record.payload, `${record.ownerId}:${record.responseId}:response:v1:${new Date(record.expiresAt).toISOString()}`); history = data.messages;
     }
-    const fresh = convertInput(body.input ?? "");
+    const tools = responsesTools(body.tools);
+    const fresh = convertInput(body.input ?? "", tools);
     const messages: ChatMessage[] = [...history]; if (body.instructions) messages.push({ role: "developer", content: body.instructions }); messages.push(...fresh);
-    if (body.tools?.some((t:any)=>t.type!=="function")) return jsonError(400,"Only caller-executed function tools are supported","unsupported_tool",rid);
-    const toolChoice=body.tool_choice?.type==="function"?{type:"function",function:{name:body.tool_choice.name}}:body.tool_choice;
+    const toolChoice = tools.choice(body.tool_choice);
     const streaming = body.stream === true;
-    const chatBody = { model: body.model, messages, stream: streaming, ...(streaming?{stream_options:{include_usage:true}}:{}), max_completion_tokens: body.max_output_tokens, tools: body.tools?.map((t:any)=>({type:"function",function:{name:t.name,description:t.description,parameters:t.parameters,strict:t.strict}})), tool_choice: toolChoice, parallel_tool_calls: body.parallel_tool_calls, response_format: body.text?.format ? body.text.format.type === "json_schema" ? {type:"json_schema",json_schema:{name:body.text.format.name,strict:body.text.format.strict,schema:body.text.format.schema}} : {type:body.text.format.type} : undefined, reasoning_effort: body.reasoning?.effort, store: false };
+    const chatBody = { model: body.model, messages, stream: streaming, ...(streaming?{stream_options:{include_usage:true}}:{}), max_completion_tokens: body.max_output_tokens, tools: tools.tools, tool_choice: toolChoice, parallel_tool_calls: body.parallel_tool_calls, response_format: body.text?.format ? body.text.format.type === "json_schema" ? {type:"json_schema",json_schema:{name:body.text.format.name,strict:body.text.format.strict,schema:body.text.format.schema}} : {type:body.text.format.type} : undefined, reasoning_effort: body.reasoning?.effort, prompt_cache_key: body.prompt_cache_key, store: false };
     const internal = new Request("https://freerouter.local/v1/chat/completions", { method:"POST", headers:{authorization:request.headers.get("authorization")||"", "content-type":"application/json", "x-request-id":rid}, body:JSON.stringify(chatBody), signal:request.signal });
     bindInternalClient(internal, auth.key);
     const chat = await chatCompletions(internal); if (!chat.ok) return new Response(await chat.text(),{status:chat.status,headers:{"content-type":"application/json","cache-control":"no-store","x-request-id":rid}});
     if (streaming) {
       const id = `resp_${randomUUID().replaceAll("-","")}`;
-      return streamResponses(chat, { id, model: body.model, input: body.input, metadata: body.metadata, created: Math.floor(Date.now()/1000), store, messages, ownerId: String(auth.key._id) });
+      return streamResponses(chat, { id, model: body.model, input: body.input, metadata: body.metadata, created: Math.floor(Date.now()/1000), store, messages, ownerId: String(auth.key._id), tools });
     }
-    const result = await chat.json() as any; const id = `resp_${randomUUID().replaceAll("-","")}`; const created = Math.floor(Date.now()/1000); const response = responseObject(id,body.model,result.choices?.[0]?.message,result.usage,created,body.input,body.metadata);
+    const result = await chat.json() as any; const id = `resp_${randomUUID().replaceAll("-","")}`; const created = Math.floor(Date.now()/1000); const response = responseObject(id,body.model,result.choices?.[0]?.message,result.usage,created,body.input,tools,body.metadata);
     if (store) { const expiresAt = new Date(Date.now()+86400000); const snapshot = [...messages, ...(result.choices?.[0]?.message ? [{role:"assistant",...result.choices[0].message}] : [])]; const payload=encryptJson({messages:snapshot,response},`${String(auth.key._id)}:${id}:response:v1:${expiresAt.toISOString()}`); await (await getDb()).collection("responses").insertOne({responseId:id,ownerId:String(auth.key._id),createdAt:new Date(),expiresAt,model:body.model,payload,expiresAtBytes:payload.body.length}); }
     response.store=store;
     return Response.json(response,{headers:{"cache-control":"no-store","x-request-id":rid,"x-freerouter-resolved-model":chat.headers.get("x-freerouter-resolved-model")||body.model}});
-  } catch(e) {const message=e instanceof Error?e.message:"Invalid request";if(message.includes("4 MiB")||message.includes("8 MiB"))return jsonError(413,message,"state_too_large",rid);if(message.includes("previous_response_id")||message.includes("Unsupported Responses input")||message.includes("Invalid input")||message.includes("input must"))return jsonError(400,message,"invalid_request",rid);return jsonError(503,"Responses state or persistence operation failed","response_state_unavailable",rid); }
+  } catch(e) {if(e instanceof RequestValidationError)return jsonError(400,e.message,e.kind==="unsupported_parameter"?"unsupported_parameter":"invalid_request",rid,e.param);const message=e instanceof Error?e.message:"Invalid request";if(message.includes("4 MiB")||message.includes("8 MiB"))return jsonError(413,message,"state_too_large",rid);if(message.includes("previous_response_id")||message.includes("Unsupported Responses input")||message.includes("Invalid input")||message.includes("input must"))return jsonError(400,message,"invalid_request",rid);return jsonError(503,"Responses state or persistence operation failed","response_state_unavailable",rid); }
 }
 
 export async function GET(request: Request, ctx: {params: Promise<Record<string,string>>}) {

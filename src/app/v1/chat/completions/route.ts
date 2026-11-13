@@ -31,7 +31,12 @@ async function classifyAuto(body:CanonicalChat,keyId:string,allowed:boolean) {
     if(!response.ok)return fallback;const data=await response.json() as any;const answer=data.answers?.category;const category=answer?.choice;if(Number(answer?.confidence??0)<.85||!["fast","code","quality","vision"].includes(category))return fallback;await redis.set(`fr:v1:jev:cache:${hash}`,category,{ex:900});return category;
   }catch{return fallback;}
 }
-function supportsReasoningEffort(profile:ModelProfile){return ["nvidia/z-ai/glm-5.3-flash","nvidia/deepseek-ai/deepseek-v4.1-flash","google/gemini-3.6-flash"].includes(profile.id);}
+function supportsReasoningEffort(profile:ModelProfile,effort:string|undefined){
+  // Nemotron's hosted API supports low/high; medium is already supported by
+  // this integration. Do not forward the unsupported Codex "minimal" value.
+  if(profile.id==="nvidia/nvidia/nemotron-3.5-super-vl-120b-a12b")return effort==="low"||effort==="medium"||effort==="high";
+  return ["nvidia/z-ai/glm-5.3-flash","nvidia/deepseek-ai/deepseek-v4.1-flash","google/gemini-3.6-flash"].includes(profile.id);
+}
 function supportsRequest(profile: ModelProfile, body: CanonicalChat) {
   // Some Mistral model families reject developer messages. The provider body
   // builder can translate developer-only requests, but cannot preserve the
@@ -54,10 +59,10 @@ function supportsRequest(profile: ModelProfile, body: CanonicalChat) {
   if (hasImage && profile.vision !== "passed") return false;
   const effort = body.reasoning_effort;
   const fastAliasHint=body.model.startsWith("fr-")&&(effort==="low"||effort==="minimal")&&profile.latency==="fast";
-  if (effort && effort !== "medium" && !supportsReasoningEffort(profile) && !fastAliasHint) return false;
+  if (effort && effort !== "medium" && !supportsReasoningEffort(profile,effort) && !fastAliasHint) return false;
   return true;
 }
-function providerRequestBody(profile:ModelProfile,input:CanonicalChat,alias:boolean){const body:any={...input,model:profile.upstream,stream:true};const fastAliasHint=alias&&(input.reasoning_effort==="low"||input.reasoning_effort==="minimal")&&profile.latency==="fast";if(fastAliasHint&&!supportsReasoningEffort(profile))delete body.reasoning_effort;return body;}
+function providerRequestBody(profile:ModelProfile,input:CanonicalChat,alias:boolean){const body:any={...input,model:profile.upstream,stream:true};const fastAliasHint=alias&&(input.reasoning_effort==="low"||input.reasoning_effort==="minimal")&&profile.latency==="fast";if(fastAliasHint&&!supportsReasoningEffort(profile,input.reasoning_effort))delete body.reasoning_effort;return body;}
 function validateGenerated(input:CanonicalChat,content:string,toolCalls:any[]){
   const format=input.response_format as any;
   if(format?.type==="json_object"){try{JSON.parse(content)}catch{return "invalid_json_output"}}

@@ -110,8 +110,15 @@ describe("parseResponsesRequest", () => {
     expect(error.kind).toBe("unsupported_parameter");
   });
 
-  it("rejects requested include fields", () => {
-    const error = rejection(() => parseResponsesRequest({ model: "fr-code", input: "hi", include: ["reasoning.encrypted_content"] }));
+  it("accepts Codex reasoning selectors and client metadata without claiming reasoning state", () => {
+    const parsed = parseResponsesRequest({ model: "fr-code", input: "hi", include: ["reasoning.encrypted_content"], client_metadata: { thread_id: "local-thread" }, prompt_cache_key: "cache-affinity" });
+    expect(parsed.include).toEqual(["reasoning.encrypted_content"]);
+    expect(parsed.client_metadata).toEqual({ thread_id: "local-thread" });
+    expect(parsed.prompt_cache_key).toBe("cache-affinity");
+  });
+
+  it("still rejects include fields the adapter cannot serve", () => {
+    const error = rejection(() => parseResponsesRequest({ model: "fr-code", input: "hi", include: ["file_search_call.results"] }));
     expect(error.param).toBe("include");
   });
 

@@ -6,6 +6,7 @@ vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
 vi.mock("@/app/v1/chat/completions/route", () => ({ POST: mocks.chatPost }));
 
 import { POST } from "./route";
+import { parseChatRequest } from "@/lib/validation";
 
 function chatStream(frames: unknown[]) {
   const body = frames.map((frame) => frame === "[DONE]" ? "data: [DONE]\n\n" : `data: ${JSON.stringify(frame)}\n\n`).join("");
@@ -17,6 +18,67 @@ describe("Responses streaming adapter", () => {
     vi.clearAllMocks();
     mocks.authenticateClient.mockResolvedValue({ key: { _id: "client-test" } });
     mocks.getDb.mockResolvedValue({ collection: vi.fn(() => ({ insertOne: vi.fn().mockResolvedValue({}) })) });
+  });
+
+  it.each(["medium", "high"])("accepts Codex's include/metadata with %s reasoning and completes a namespaced tool call and replay", async (effort) => {
+    const tools = [{ type: "namespace", name: "crm", tools: [{ type: "function", name: "lookup", parameters: { type: "object" } }, ...Array.from({ length: 700 }, (_, n) => ({ type: "function", name: `extra_${n}`, parameters: { type: "object" } }))] }];
+    let wireName = "";
+    mocks.chatPost.mockImplementationOnce(async (request: Request) => {
+      const body = await request.json();
+      parseChatRequest(body);
+      expect(body.tools).toHaveLength(701);
+      expect(body).not.toHaveProperty("include");
+      expect(body).not.toHaveProperty("client_metadata");
+      expect(body.prompt_cache_key).toBe("affinity-test");
+      expect(body.reasoning_effort).toBe(effort);
+      wireName = body.tools[0].function.name;
+      expect(body.tool_choice.function.name).toBe(wireName);
+      return chatStream([
+        { choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: "call-ns", type: "function", function: { name: wireName.slice(0, 10), arguments: "{\"id\":" } }] }, finish_reason: null }] },
+        { choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { name: wireName.slice(10), arguments: "7}" } }] }, finish_reason: null }] },
+        { choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }] }, "[DONE]",
+      ]);
+    });
+    const first = await POST(new Request("https://freerouter.test/v1/responses", {
+      method: "POST", headers: { authorization: "Bearer sk-fr-test", "content-type": "application/json" },
+      body: JSON.stringify({ model: "fr-code", input: "Look up 7", stream: true, store: false, tools, tool_choice: { type: "function", name: "lookup", namespace: "crm" }, reasoning: { effort, summary: "auto" }, include: ["reasoning.encrypted_content"], client_metadata: { thread_id: "not-an-owner" }, prompt_cache_key: "affinity-test" }),
+    }));
+    expect(first.status).toBe(200);
+    const wire = await first.text();
+    const events = [...wire.matchAll(/event: ([^\n]+)\ndata: ([^\n]+)/g)].map((match) => JSON.parse(match[2]));
+    const added = events.find((event) => event.type === "response.output_item.added").item;
+    expect(added).toMatchObject({ type: "function_call", namespace: "crm", name: "lookup", call_id: "call-ns" });
+    const complete = events.at(-1).response;
+    expect(complete.status).toBe("completed");
+    expect(complete.output[0]).toMatchObject({ ...added, status: "completed", arguments: '{"id":7}' });
+    expect(complete.output.some((item: any) => item.type === "reasoning")).toBe(false);
+    expect(events.filter((event) => event.type === "response.function_call_arguments.delta").map((event) => event.delta).join("")).toBe('{"id":7}');
+
+    mocks.chatPost.mockImplementationOnce(async (request: Request) => {
+      const body = await request.json();
+      parseChatRequest(body);
+      expect(body.messages[1].content).toEqual([{ type: "text", text: "Checking." }]);
+      expect(body.messages[2].tool_calls[0]).toMatchObject({ id: "call-ns", function: { name: wireName, arguments: '{"id":7}' } });
+      expect(body.messages[3]).toMatchObject({ role: "tool", tool_call_id: "call-ns", content: "FOUND" });
+      return Response.json({ choices: [{ message: { content: "Found it." } }] });
+    });
+    const second = await POST(new Request("https://freerouter.test/v1/responses", {
+      method: "POST", headers: { authorization: "Bearer sk-fr-test", "content-type": "application/json" },
+      body: JSON.stringify({ model: "fr-code", store: false, tools, input: [{ role: "user", content: "Look up 7" }, { role: "assistant", content: [{ type: "output_text", text: "Checking." }] }, ...complete.output, { type: "function_call_output", call_id: "call-ns", output: [{ type: "input_text", text: "FOUND" }] }] }),
+    }));
+    expect(second.status).toBe(200);
+    expect((await second.json()).output_text).toBe("Found it.");
+  });
+
+  it("rejects unsupported reasoning state and unsupported tool kinds before dispatch", async () => {
+    for (const extra of [{ input: [{ type: "reasoning", encrypted_content: "opaque" }] }, { tools: [{ type: "web_search" }] }]) {
+      const response = await POST(new Request("https://freerouter.test/v1/responses", {
+        method: "POST", headers: { authorization: "Bearer sk-fr-test", "content-type": "application/json" },
+        body: JSON.stringify({ model: "fr-code", input: "hi", store: false, ...extra }),
+      }));
+      expect(response.status).toBe(400);
+    }
+    expect(mocks.chatPost).not.toHaveBeenCalled();
   });
 
   it("streams Chat output as incremental Responses events and requests upstream streaming", async () => {
