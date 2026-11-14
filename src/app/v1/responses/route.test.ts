@@ -20,6 +20,49 @@ describe("Responses streaming adapter", () => {
     mocks.getDb.mockResolvedValue({ collection: vi.fn(() => ({ insertOne: vi.fn().mockResolvedValue({}) })) });
   });
 
+  it("keeps a Nemotron progress-only response open until a caller tool action, hiding private controls", async () => {
+    let publicName = "";
+    mocks.chatPost.mockImplementationOnce(async (request: Request) => {
+      const body = await request.json();
+      expect(body.tool_choice).toBe("required");
+      publicName = body.tools[0].function.name;
+      const progress = body.tools.find((tool: any) => tool.function.description?.includes(".progress]")).function.name;
+      return chatStream([
+        { choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: "private-1", type: "function", function: { name: progress, arguments: '{"message":"Let me fix the script."}' } }] }, finish_reason: null }] },
+        { choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }] },
+        { choices: [], usage: { prompt_tokens: 100, completion_tokens: 10, total_tokens: 110 } }, "[DONE]",
+      ]);
+    }).mockImplementationOnce(async (request: Request) => {
+      const body = await request.json();
+      expect(body.messages.at(-1)).toMatchObject({ role: "tool", tool_call_id: "private-1" });
+      return chatStream([
+        { choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: "caller-1", type: "function", function: { name: publicName, arguments: "{}" } }] }, finish_reason: null }] },
+        { choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }] },
+        { choices: [], usage: { prompt_tokens: 120, completion_tokens: 20, total_tokens: 140 } }, "[DONE]",
+      ]);
+    });
+    const response = await POST(new Request("https://freerouter.test/v1/responses", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model: "nvidia/nvidia/nemotron-3.5-super-vl-120b-a12b", input: "Finish the work", tools: [{ type: "function", name: "run_check", parameters: { type: "object" } }], stream: true, store: false, include: ["reasoning.encrypted_content"] }) }));
+    const wire = await response.text();
+    const complete = JSON.parse(wire.split("event: response.completed\ndata: ")[1].split("\n\n")[0]).response;
+    expect(mocks.chatPost).toHaveBeenCalledTimes(2);
+    expect(complete.output).toContainEqual(expect.objectContaining({ type: "function_call", name: "run_check", call_id: "caller-1" }));
+    expect(complete.usage).toMatchObject({ input_tokens: 220, output_tokens: 30, total_tokens: 250 });
+    expect(wire).not.toContain("private-1");
+    expect(wire).not.toContain("fr_runtime_");
+  });
+
+  it.each(["none", "required"])("preserves an explicit %s tool choice without enabling agent controls", async choice => {
+    mocks.chatPost.mockImplementationOnce(async (request: Request) => {
+      const body = await request.json();
+      expect(body.tool_choice).toBe(choice);
+      expect(body.tools).toHaveLength(1);
+      return chatStream([{ choices: [{ index: 0, delta: { content: "Answer" }, finish_reason: null }] }, { choices: [{ index: 0, delta: {}, finish_reason: "stop" }] }, "[DONE]"]);
+    });
+    const response = await POST(new Request("https://freerouter.test/v1/responses", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model: "nvidia/nvidia/nemotron-3.5-super-vl-120b-a12b", input: "Check", tools: [{ type: "function", name: "run_check" }], stream: true, store: false, include: ["reasoning.encrypted_content"], tool_choice: choice }) }));
+    await response.text();
+    expect(mocks.chatPost).toHaveBeenCalledOnce();
+  });
+
   it.each(["medium", "high"])("accepts Codex's include/metadata with %s reasoning and completes a namespaced tool call and replay", async (effort) => {
     const tools = [{ type: "namespace", name: "crm", tools: [{ type: "function", name: "lookup", parameters: { type: "object" } }, ...Array.from({ length: 700 }, (_, n) => ({ type: "function", name: `extra_${n}`, parameters: { type: "object" } }))] }];
     let wireName = "";

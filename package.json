@@ -14,6 +14,7 @@
     "test:quota:redis": "vitest run --config vitest.integration.config.ts",
     "smoke:models": "node scripts/live-model-smoke.mjs",
     "smoke:deployment": "node scripts/deployed-smoke.mjs",
+    "smoke:codex-agent": "node scripts/codex-agent-smoke.mjs",
     "smoke:matilda": "node scripts/matilda-probe.mjs",
     "smoke:mistral": "node scripts/mistral-gateway-smoke.mjs",
     "smoke:tokenharbor": "node scripts/tokenharbor-gateway-smoke.mjs",

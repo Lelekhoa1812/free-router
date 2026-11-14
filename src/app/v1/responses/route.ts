@@ -6,6 +6,8 @@ import { encryptJson, decryptJson } from "@/lib/crypto";
 import { readJson, jsonError } from "@/lib/http";
 import { parseResponsesRequest, RequestValidationError } from "@/lib/validation";
 import { responsesTools, type ResponsesTools } from "@/lib/responses-tools";
+import { AGENT_TURN_INSTRUCTIONS, agentTurnChat, agentTurnTools } from "@/lib/providers/agent-turn";
+import type { CanonicalChat } from "@/lib/providers/openai";
 import { POST as chatCompletions } from "@/app/v1/chat/completions/route";
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -196,15 +198,24 @@ export async function POST(request: Request) {
       if (!record) return jsonError(404,"Response is unavailable","response_not_found",rid);
       const data = decryptJson<{ messages: ChatMessage[] }>(record.payload, `${record.ownerId}:${record.responseId}:response:v1:${new Date(record.expiresAt).toISOString()}`); history = data.messages;
     }
-    const tools = responsesTools(body.tools);
+    const agentControl = body.stream === true && body.model === "nvidia/nvidia/nemotron-3.5-super-vl-120b-a12b"
+      && body.tools?.length && body.include?.includes("reasoning.encrypted_content")
+      && (body.tool_choice === undefined || body.tool_choice === "auto")
+      && (!body.text?.format || body.text.format.type === "text")
+      ? agentTurnTools(body.tools) : undefined;
+    const tools = responsesTools(agentControl ? [...body.tools, agentControl] : body.tools);
     const fresh = convertInput(body.input ?? "", tools);
     const messages: ChatMessage[] = [...history]; if (body.instructions) messages.push({ role: "developer", content: body.instructions }); messages.push(...fresh);
     const toolChoice = tools.choice(body.tool_choice);
     const streaming = body.stream === true;
     const chatBody = { model: body.model, messages, stream: streaming, ...(streaming?{stream_options:{include_usage:true}}:{}), max_completion_tokens: body.max_output_tokens, tools: tools.tools, tool_choice: toolChoice, parallel_tool_calls: body.parallel_tool_calls, response_format: body.text?.format ? body.text.format.type === "json_schema" ? {type:"json_schema",json_schema:{name:body.text.format.name,strict:body.text.format.strict,schema:body.text.format.schema}} : {type:body.text.format.type} : undefined, reasoning_effort: body.reasoning?.effort, prompt_cache_key: body.prompt_cache_key, store: false };
-    const internal = new Request("https://freerouter.local/v1/chat/completions", { method:"POST", headers:{authorization:request.headers.get("authorization")||"", "content-type":"application/json", "x-request-id":rid}, body:JSON.stringify(chatBody), signal:request.signal });
-    bindInternalClient(internal, auth.key);
-    const chat = await chatCompletions(internal); if (!chat.ok) return new Response(await chat.text(),{status:chat.status,headers:{"content-type":"application/json","cache-control":"no-store","x-request-id":rid}});
+    const dispatch = async (input: CanonicalChat, signal = request.signal) => {
+      const internal = new Request("https://freerouter.local/v1/chat/completions", { method:"POST", headers:{authorization:request.headers.get("authorization")||"", "content-type":"application/json", "x-request-id":rid}, body:JSON.stringify(input), signal });
+      bindInternalClient(internal, auth.key);
+      return chatCompletions(internal);
+    };
+    const chat = agentControl ? await agentTurnChat({ body: { ...chatBody, messages: [...messages, { role: "developer", content: `${AGENT_TURN_INSTRUCTIONS}\nPrivate runtime namespace: ${agentControl.name}.` }] }, progress: tools.encode("progress", agentControl.name), finish: tools.encode("finish", agentControl.name), signal: request.signal, dispatch }) : await dispatch(chatBody);
+    if (!chat.ok) return new Response(await chat.text(),{status:chat.status,headers:{"content-type":"application/json","cache-control":"no-store","x-request-id":rid}});
     if (streaming) {
       const id = `resp_${randomUUID().replaceAll("-","")}`;
       return streamResponses(chat, { id, model: body.model, input: body.input, metadata: body.metadata, created: Math.floor(Date.now()/1000), store, messages, ownerId: String(auth.key._id), tools });
