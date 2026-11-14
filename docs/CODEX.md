@@ -8,6 +8,8 @@ In observed desktop rollouts the gateway returned successful responses, but the 
 
 For the narrowly scoped Codex/Nemotron request shape documented in [API_CONTRACTS.md](API_CONTRACTS.md), private progress and finish functions give the Chat model an explicit turn protocol. The gateway continues only a declared private progress action; it does not infer unfinished work from English text. Caller actions still execute in Codex. Required upstream tool selection prevents unmarked progress text from silently becoming a final answer. Deliberate final answers, blockers, permission questions and user stops remain valid outcomes. Repeated progress has a bounded failure path rather than an endless continuation loop.
 
+The 15 November 2026 production probe recovered from its deliberate tool error and completed all six sequential synthetic tool actions at medium reasoning effort. Its final receipt request exceeded the probe's 180-second client timeout, so this verifies continued tool execution but does not certify complete long-run success. A high-effort run separately reached its 16,384-token output cap. Neither outcome is evidence that a live business-MCP workflow completed.
+
 Run the bounded synthetic acceptance probe against a running local production build:
 
 ```sh
@@ -16,7 +18,7 @@ pnpm start --port 3107
 pnpm smoke:codex-agent
 ```
 
-For production, set `FREEROUTER_BASE_URL=https://free-router-olive.vercel.app` before the same probe. It uses six sequential synthetic checks, deliberately returns one protocol error, and verifies the tool-issued final receipt. It never executes business MCP tools or shell commands. It fails immediately if a progress-only final answer arrives before all checks pass. This is a bounded model acceptance test; it cannot guarantee arbitrary tasks or unlimited-session reliability.
+For production, set `FREEROUTER_BASE_URL=https://free-router-olive.vercel.app` before the same probe. It uses six sequential synthetic checks at medium reasoning effort with a 32,768-token output ceiling, deliberately returns one protocol error, and verifies the tool-issued final receipt. It never executes business MCP tools or shell commands. It fails immediately if a progress-only final answer arrives before all checks pass. This is a bounded model acceptance test; it cannot guarantee arbitrary tasks or unlimited-session reliability.
 
 ## A turn says its goal budget was exhausted
 

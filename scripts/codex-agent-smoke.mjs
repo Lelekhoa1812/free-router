@@ -23,7 +23,7 @@ try {
   for (; responses < 12; responses++) {
     const response = await fetch(`${base}/v1/responses`, {
       method: 'POST', headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ model, input, tools: [tool], tool_choice: 'auto', parallel_tool_calls: false, reasoning: { effort: 'high' }, include: ['reasoning.encrypted_content'], store: false, stream: true, max_output_tokens: 16_384 }),
+      body: JSON.stringify({ model, input, tools: [tool], tool_choice: 'auto', parallel_tool_calls: false, reasoning: { effort: 'medium' }, include: ['reasoning.encrypted_content'], store: false, stream: true, max_output_tokens: 32_768 }),
       signal: AbortSignal.timeout(180_000),
     });
     assert(response.ok, `Responses HTTP ${response.status}`);
