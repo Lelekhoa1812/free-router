@@ -205,6 +205,24 @@ describe("Responses streaming adapter", () => {
     expect(mocks.chatPost).not.toHaveBeenCalled();
   });
 
+  it("converts a Codex delegated-task bootstrap into user input without requiring a tool-call ID", async () => {
+    const delegation = "<codex_delegation>\n  <source_thread_id>thread-source</source_thread_id>\n  <input>Run a read-only check.</input>\n</codex_delegation>";
+    mocks.chatPost.mockImplementationOnce(async (request: Request) => {
+      const body = await request.json();
+      parseChatRequest(body);
+      expect(body.messages[0]).toEqual({ role: "user", content: delegation });
+      return Response.json({ choices: [{ message: { content: "Read-only check complete." } }] });
+    });
+    const response = await POST(new Request("https://freerouter.test/v1/responses", {
+      method: "POST", headers: { authorization: "Bearer sk-fr-test", "content-type": "application/json" },
+      body: JSON.stringify({ model: "fr-code", store: false, input: [
+        { type: "function_call_output", id: "fco-bootstrap", name: "create_thread", namespace: "codex_app", output: delegation },
+      ] }),
+    }));
+    expect(response.status).toBe(200);
+    expect((await response.json()).output_text).toBe("Read-only check complete.");
+  });
+
   it("rejects unsupported reasoning state and unsupported tool kinds before dispatch", async () => {
     for (const extra of [{ input: [{ type: "reasoning", encrypted_content: "opaque" }] }, { tools: [{ type: "web_search" }] }]) {
       const response = await POST(new Request("https://freerouter.test/v1/responses", {

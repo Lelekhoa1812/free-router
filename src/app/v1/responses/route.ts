@@ -27,6 +27,14 @@ function convertInput(input: unknown, tools: ResponsesTools, pendingCallIds = ne
     if (item.type === "function_call_output") {
       let callId = item.call_id;
       if (typeof callId !== "string" || !callId.trim()) {
+        const isDelegationBootstrap = item.namespace === "codex_app"
+          && ["create_thread", "send_message_to_thread"].includes(item.name)
+          && typeof item.output === "string"
+          && /^\s*<codex_delegation>[\s\S]*<\/codex_delegation>\s*$/.test(item.output);
+        if (isDelegationBootstrap) {
+          out.push({ role: "user", content: item.output });
+          continue;
+        }
         if (pendingCallIds.size === 0) throw new RequestValidationError("input", "function_call_output is missing call_id and no pending function_call is available in this input or stored previous-response history; provide call_id or start a fresh conversation if earlier tool history was compacted");
         if (pendingCallIds.size > 1) throw new RequestValidationError("input", "function_call_output is missing call_id and is ambiguous because multiple function_calls are pending; provide call_id");
         callId = pendingCallIds.values().next().value!;
