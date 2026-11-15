@@ -19,7 +19,7 @@ function convertInput(input: unknown, tools: ResponsesTools): ChatMessage[] {
   const pendingCallIds = new Set<string>();
   for (const item of input as any[]) {
     if (!item || typeof item !== "object") throw new Error("Invalid input item");
-    if (["system","developer","user","assistant"].includes(item.role) && (item.type === "message" || item.role)) { const parts=Array.isArray(item.content)?item.content.map((p:any)=>p?.type==="input_text"||p?.type==="output_text"?{type:"text",text:p.text}:p?.type==="input_image"?{type:"image_url",image_url:p.image_url}:p):item.content;out.push({ role: item.role, content: parts ?? "" }); continue; }
+    if (["system","developer","user","assistant"].includes(item.role) && (item.type === "message" || item.role)) { pendingCallIds.clear(); const parts=Array.isArray(item.content)?item.content.map((p:any)=>p?.type==="input_text"||p?.type==="output_text"?{type:"text",text:p.text}:p?.type==="input_image"?{type:"image_url",image_url:p.image_url}:p):item.content;out.push({ role: item.role, content: parts ?? "" }); continue; }
     if (item.type === "function_call") {
       if (typeof item.call_id !== "string" || !item.call_id.trim()) throw new RequestValidationError("input", "function_call items require a non-empty call_id");
       pendingCallIds.add(item.call_id);
