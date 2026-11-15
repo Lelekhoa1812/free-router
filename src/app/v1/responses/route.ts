@@ -27,7 +27,8 @@ function convertInput(input: unknown, tools: ResponsesTools, pendingCallIds = ne
     if (item.type === "function_call_output") {
       let callId = item.call_id;
       if (typeof callId !== "string" || !callId.trim()) {
-        if (pendingCallIds.size !== 1) throw new RequestValidationError("input", "function_call_output is missing call_id and cannot be matched to exactly one pending function_call");
+        if (pendingCallIds.size === 0) throw new RequestValidationError("input", "function_call_output is missing call_id and no pending function_call is available in this input or stored previous-response history; provide call_id or start a fresh conversation if earlier tool history was compacted");
+        if (pendingCallIds.size > 1) throw new RequestValidationError("input", "function_call_output is missing call_id and is ambiguous because multiple function_calls are pending; provide call_id");
         callId = pendingCallIds.values().next().value!;
       }
       pendingCallIds.delete(callId);

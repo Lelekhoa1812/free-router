@@ -189,7 +189,19 @@ describe("Responses streaming adapter", () => {
       ] }),
     }));
     expect(response.status).toBe(400);
-    expect(await response.json()).toMatchObject({ error: { param: "input", message: expect.stringContaining("cannot be matched to exactly one pending function_call") } });
+    expect(await response.json()).toMatchObject({ error: { param: "input", message: expect.stringContaining("ambiguous because multiple function_calls are pending") } });
+    expect(mocks.chatPost).not.toHaveBeenCalled();
+  });
+
+  it("explains when context contains an ID-less result but no matching call", async () => {
+    const response = await POST(new Request("https://freerouter.test/v1/responses", {
+      method: "POST", headers: { authorization: "Bearer sk-fr-test", "content-type": "application/json" },
+      body: JSON.stringify({ model: "fr-code", store: false, input: [
+        { type: "function_call_output", output: "Orphaned result" },
+      ] }),
+    }));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { param: "input", message: expect.stringContaining("no pending function_call is available") } });
     expect(mocks.chatPost).not.toHaveBeenCalled();
   });
 
