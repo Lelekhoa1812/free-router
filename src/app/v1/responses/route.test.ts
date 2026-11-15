@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ authenticateClient: vi.fn(), bindInternalClient: vi.fn(), chatPost: vi.fn(), getDb: vi.fn() }));
+const mocks = vi.hoisted(() => ({ authenticateClient: vi.fn(), bindInternalClient: vi.fn(), chatPost: vi.fn(), getDb: vi.fn(), decryptJson: vi.fn(), encryptJson: vi.fn() }));
 vi.mock("@/lib/auth/client", () => ({ authenticateClient: mocks.authenticateClient, bindInternalClient: mocks.bindInternalClient }));
 vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
+vi.mock("@/lib/crypto", () => ({ decryptJson: mocks.decryptJson, encryptJson: mocks.encryptJson }));
 vi.mock("@/app/v1/chat/completions/route", () => ({ POST: mocks.chatPost }));
 
 import { POST } from "./route";
@@ -152,6 +153,28 @@ describe("Responses streaming adapter", () => {
     }));
     expect(response.status).toBe(200);
     expect((await response.json()).output_text).toBe("Recovered current turn.");
+  });
+
+  it("matches an ID-less result against the pending call in stored previous-response history", async () => {
+    mocks.decryptJson.mockReturnValueOnce({ messages: [
+      { role: "user", content: "Read the interview list." },
+      { role: "assistant", content: null, tool_calls: [{ id: "call-stored", type: "function", function: { name: "list_interviews", arguments: "{}" } }] },
+    ] });
+    mocks.getDb.mockResolvedValue({ collection: vi.fn(() => ({ findOne: vi.fn().mockResolvedValue({ responseId: "resp-stored", ownerId: "client-test", expiresAt: new Date(Date.now() + 60_000), payload: {} }) })) });
+    mocks.chatPost.mockImplementationOnce(async (request: Request) => {
+      const body = await request.json();
+      parseChatRequest(body);
+      expect(body.messages[2]).toMatchObject({ role: "tool", tool_call_id: "call-stored", content: "KQA read succeeded" });
+      return Response.json({ choices: [{ message: { content: "The stored-response continuation completed." } }] });
+    });
+    const response = await POST(new Request("https://freerouter.test/v1/responses", {
+      method: "POST", headers: { authorization: "Bearer sk-fr-test", "content-type": "application/json" },
+      body: JSON.stringify({ model: "fr-code", store: false, previous_response_id: "resp-stored", tools: [{ type: "function", name: "list_interviews" }], input: [
+        { type: "function_call_output", output: "KQA read succeeded" },
+      ] }),
+    }));
+    expect(response.status).toBe(200);
+    expect((await response.json()).output_text).toBe("The stored-response continuation completed.");
   });
 
   it("rejects a missing function_call_output call_id when multiple calls are unmatched", async () => {

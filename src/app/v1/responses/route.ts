@@ -12,11 +12,10 @@ import { POST as chatCompletions } from "@/app/v1/chat/completions/route";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 type ChatMessage = { role: string; content?: unknown; tool_calls?: unknown[]; tool_call_id?: string; name?: string };
-function convertInput(input: unknown, tools: ResponsesTools): ChatMessage[] {
+function convertInput(input: unknown, tools: ResponsesTools, pendingCallIds = new Set<string>()): ChatMessage[] {
   if (typeof input === "string") return [{ role: "user", content: input }];
   if (!Array.isArray(input)) throw new Error("input must be a string or array of items");
   const out: ChatMessage[] = [];
-  const pendingCallIds = new Set<string>();
   for (const item of input as any[]) {
     if (!item || typeof item !== "object") throw new Error("Invalid input item");
     if (["system","developer","user","assistant"].includes(item.role) && (item.type === "message" || item.role)) { pendingCallIds.clear(); const parts=Array.isArray(item.content)?item.content.map((p:any)=>p?.type==="input_text"||p?.type==="output_text"?{type:"text",text:p.text}:p?.type==="input_image"?{type:"image_url",image_url:p.image_url}:p):item.content;out.push({ role: item.role, content: parts ?? "" }); continue; }
@@ -215,7 +214,14 @@ export async function POST(request: Request) {
       && (!body.text?.format || body.text.format.type === "text")
       ? agentTurnTools(body.tools) : undefined;
     const tools = responsesTools(agentControl ? [...body.tools, agentControl] : body.tools);
-    const fresh = convertInput(body.input ?? "", tools);
+    const pendingCallIds = new Set<string>();
+    for (const message of history) {
+      if (message.role === "assistant" && Array.isArray(message.tool_calls)) {
+        for (const call of message.tool_calls as any[]) if (typeof call?.id === "string" && call.id.trim()) pendingCallIds.add(call.id);
+      } else if (message.role === "tool" && typeof message.tool_call_id === "string") pendingCallIds.delete(message.tool_call_id);
+      else if (message.role !== "tool") pendingCallIds.clear();
+    }
+    const fresh = convertInput(body.input ?? "", tools, pendingCallIds);
     const messages: ChatMessage[] = [...history]; if (body.instructions) messages.push({ role: "developer", content: body.instructions }); messages.push(...fresh);
     const toolChoice = tools.choice(body.tool_choice);
     const streaming = body.stream === true;
