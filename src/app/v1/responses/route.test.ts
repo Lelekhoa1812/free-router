@@ -113,6 +113,41 @@ describe("Responses streaming adapter", () => {
     expect((await second.json()).output_text).toBe("Found it.");
   });
 
+  it("recovers a missing function_call_output call_id when one prior call is unmatched", async () => {
+    mocks.chatPost.mockImplementationOnce(async (request: Request) => {
+      const body = await request.json();
+      parseChatRequest(body);
+      expect(body.messages[0].tool_calls[0].id).toBe("call-unique");
+      expect(body.messages[1]).toMatchObject({ role: "tool", tool_call_id: "call-unique", content: "KQA read succeeded" });
+      return Response.json({ choices: [{ message: { content: "The KQA read completed." } }] });
+    });
+    const response = await POST(new Request("https://freerouter.test/v1/responses", {
+      method: "POST", headers: { authorization: "Bearer sk-fr-test", "content-type": "application/json" },
+      body: JSON.stringify({ model: "fr-code", store: false, tools: [{ type: "function", name: "list_interviews" }], input: [
+        { type: "function_call", call_id: "call-unique", name: "list_interviews", arguments: "{}" },
+        { type: "function_call_output", output: "KQA read succeeded" },
+      ] }),
+    }));
+    expect(response.status).toBe(200);
+    expect((await response.json()).output_text).toBe("The KQA read completed.");
+  });
+
+  it("rejects a missing function_call_output call_id when multiple calls are unmatched", async () => {
+    const response = await POST(new Request("https://freerouter.test/v1/responses", {
+      method: "POST", headers: { authorization: "Bearer sk-fr-test", "content-type": "application/json" },
+      body: JSON.stringify({ model: "fr-code", store: false, tools: [
+        { type: "function", name: "list_interviews" }, { type: "function", name: "get_status" },
+      ], input: [
+        { type: "function_call", call_id: "call-one", name: "list_interviews", arguments: "{}" },
+        { type: "function_call", call_id: "call-two", name: "get_status", arguments: "{}" },
+        { type: "function_call_output", output: "Ambiguous result" },
+      ] }),
+    }));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { param: "input", message: expect.stringContaining("cannot be matched to exactly one pending function_call") } });
+    expect(mocks.chatPost).not.toHaveBeenCalled();
+  });
+
   it("rejects unsupported reasoning state and unsupported tool kinds before dispatch", async () => {
     for (const extra of [{ input: [{ type: "reasoning", encrypted_content: "opaque" }] }, { tools: [{ type: "web_search" }] }]) {
       const response = await POST(new Request("https://freerouter.test/v1/responses", {

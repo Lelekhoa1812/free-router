@@ -14,6 +14,8 @@ On 15 November 2026, the high/medium-effort production probe completed its six t
 
 An installed-Codex low-effort retest completed six local fixture checks, then exposed a second adapter edge case: the model emitted a `complete` finish control and a caller tool call in parallel, which the gateway rejected. After the bridge fix was deployed, the same bounded installed-client fixture completed all six checks and returned its expected final answer (exit 0, nine command executions, no timeout or compaction). The client reported one MCP tool call, but the run did not capture its identity, so this test does not certify business-MCP behavior. Real KQA/business workflows and arbitrary long-session reliability remain unverified.
 
+On 15 November, a fresh read-only turn in the long-running `kqa/test` Codex chat failed before any KQA tool ran. FreeRouter's Responses-to-Chat conversion received a `function_call_output` without `call_id`, then produced the Chat validation error `messages[99].tool_call_id: tool messages require tool_call_id`. The adapter now infers a missing ID only when exactly one prior function call is still unmatched; ambiguous history is rejected before dispatch with a direct HTTP 400. Local regressions cover both cases. Production acceptance of this recovery and the KQA session remains pending.
+
 Run the bounded synthetic acceptance probe against a running local production build:
 
 ```sh

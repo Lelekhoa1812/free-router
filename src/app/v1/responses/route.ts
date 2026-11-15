@@ -16,17 +16,28 @@ function convertInput(input: unknown, tools: ResponsesTools): ChatMessage[] {
   if (typeof input === "string") return [{ role: "user", content: input }];
   if (!Array.isArray(input)) throw new Error("input must be a string or array of items");
   const out: ChatMessage[] = [];
+  const pendingCallIds = new Set<string>();
   for (const item of input as any[]) {
     if (!item || typeof item !== "object") throw new Error("Invalid input item");
     if (["system","developer","user","assistant"].includes(item.role) && (item.type === "message" || item.role)) { const parts=Array.isArray(item.content)?item.content.map((p:any)=>p?.type==="input_text"||p?.type==="output_text"?{type:"text",text:p.text}:p?.type==="input_image"?{type:"image_url",image_url:p.image_url}:p):item.content;out.push({ role: item.role, content: parts ?? "" }); continue; }
-    if (item.type === "function_call") { out.push({ role: "assistant", content: null, tool_calls: [{ id: item.call_id, type: "function", function: { name: tools.encode(item.name, item.namespace), arguments: item.arguments } }] }); continue; }
+    if (item.type === "function_call") {
+      if (typeof item.call_id !== "string" || !item.call_id.trim()) throw new RequestValidationError("input", "function_call items require a non-empty call_id");
+      pendingCallIds.add(item.call_id);
+      out.push({ role: "assistant", content: null, tool_calls: [{ id: item.call_id, type: "function", function: { name: tools.encode(item.name, item.namespace), arguments: item.arguments } }] }); continue;
+    }
     if (item.type === "function_call_output") {
+      let callId = item.call_id;
+      if (typeof callId !== "string" || !callId.trim()) {
+        if (pendingCallIds.size !== 1) throw new RequestValidationError("input", "function_call_output is missing call_id and cannot be matched to exactly one pending function_call");
+        callId = pendingCallIds.values().next().value!;
+      }
+      pendingCallIds.delete(callId);
       let output = item.output;
       if (Array.isArray(output)) {
         if (output.some((part:any)=>!["input_text","output_text","text"].includes(part?.type)||typeof part.text!=="string")) throw new Error("Invalid input: tool outputs support text parts only");
         output = output.map((part:any)=>part.text).join("\n");
       }
-      out.push({ role: "tool", tool_call_id: item.call_id, content: output }); continue;
+      out.push({ role: "tool", tool_call_id: callId, content: output }); continue;
     }
     throw new Error(`Unsupported Responses input item: ${String(item.type || "unknown")}`);
   }
