@@ -6,6 +6,8 @@ const base = (process.env.FREEROUTER_BASE_URL || 'http://127.0.0.1:3107').replac
 const key = process.env.FREEROUTER_API_KEY;
 assert(key, 'Set FREEROUTER_API_KEY in the environment; do not put it in source.');
 const model = 'nvidia/nvidia/nemotron-3.5-super-vl-120b-a12b';
+const effort = process.env.FREEROUTER_REASONING_EFFORT || 'low';
+assert(['low', 'medium', 'high'].includes(effort), 'FREEROUTER_REASONING_EFFORT must be low, medium, or high.');
 const receipt = `AGENT_CHECKS_OK_${randomUUID()}`;
 const tool = { type: 'namespace', name: 'checks', tools: [{
   type: 'function', name: 'run_check', description: 'Run one sequential synthetic check. Correct the request if the tool reports an error.',
@@ -21,13 +23,16 @@ let completed = false;
 
 try {
   for (; responses < 12; responses++) {
+    const startedAt = Date.now();
     const response = await fetch(`${base}/v1/responses`, {
       method: 'POST', headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ model, input, tools: [tool], tool_choice: 'auto', parallel_tool_calls: false, reasoning: { effort: 'medium' }, include: ['reasoning.encrypted_content'], store: false, stream: true, max_output_tokens: 32_768 }),
-      signal: AbortSignal.timeout(180_000),
+      body: JSON.stringify({ model, input, tools: [tool], tool_choice: 'auto', parallel_tool_calls: false, reasoning: { effort }, include: ['reasoning.encrypted_content'], store: false, stream: true, max_output_tokens: 131_072 }),
+      signal: AbortSignal.timeout(265_000),
     });
+    console.log(JSON.stringify({ response: responses + 1, status: response.status, requestId: response.headers.get('x-request-id'), headersMs: Date.now() - startedAt }));
     assert(response.ok, `Responses HTTP ${response.status}`);
     const wire = await response.text();
+    console.log(JSON.stringify({ response: responses + 1, bodyMs: Date.now() - startedAt, bodyBytes: Buffer.byteLength(wire) }));
     const events = wire.split(/\r?\n/).filter(line => line.startsWith('data: ')).map(line => JSON.parse(line.slice(6)));
     const terminal = events.findLast(event => ['response.completed', 'response.failed', 'response.incomplete'].includes(event.type));
     if (terminal?.type !== 'response.completed') console.log(JSON.stringify({ terminal: terminal?.type, details: terminal?.response?.incomplete_details, error: terminal?.response?.error, usage: terminal?.response?.usage }));

@@ -80,14 +80,26 @@ describe("Explicit agent-turn runtime", () => {
     expect(dispatch).toHaveBeenCalledOnce();
   });
 
-  it("does not retry failed continuations or combine finish with a caller action", async () => {
+  it("does not retry failed continuations and resolves parallel finish/tool actions safely", async () => {
     const dispatch = vi.fn().mockResolvedValueOnce(chat([call("private_progress", { message: "Progress" })])).mockResolvedValueOnce(new Response("unavailable", { status: 503 }));
     const wire = await (await agentTurnChat(options(dispatch))).text();
     expect(wire).toContain("HTTP 503");
     expect(wire).not.toContain("[DONE]");
     expect(dispatch).toHaveBeenCalledTimes(2);
-    const mixed = vi.fn().mockResolvedValue(chat([call("private_finish", { status: "complete", message: "Done" }), { ...call("caller_tool", {}), index: 1 }]));
-    expect(await (await agentTurnChat(options(mixed))).text()).toContain("Conflicting agent finish and tool actions");
+    const completeAndTool = vi.fn().mockResolvedValue(chat([call("private_finish", { status: "complete", message: "Done" }), { ...call("caller_tool", {}, "external-call"), index: 1 }]));
+    const forwarded = await (await agentTurnChat(options(completeAndTool))).text();
+    expect(forwarded).toContain('"id":"external-call"');
+    expect(forwarded).toContain('"finish_reason":"tool_calls"');
+    expect(forwarded).not.toContain("private_finish");
+    expect(forwarded).not.toContain('"content":"Done"');
+    expect(completeAndTool).toHaveBeenCalledOnce();
+
+    const blockedAndTool = vi.fn().mockResolvedValue(chat([call("private_finish", { status: "needs_input", message: "I need approval." }), { ...call("caller_tool", {}, "must-not-run"), index: 1 }]));
+    const blocked = await (await agentTurnChat(options(blockedAndTool))).text();
+    expect(blocked).toContain('"content":"I need approval."');
+    expect(blocked).toContain('"finish_reason":"stop"');
+    expect(blocked).not.toContain("must-not-run");
+    expect(blockedAndTool).toHaveBeenCalledOnce();
   });
 
   it("cancels the upstream on client cancellation", async () => {

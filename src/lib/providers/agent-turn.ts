@@ -91,27 +91,33 @@ export async function agentTurnChat(options: {
           const progress = calls.filter(call => call.function.name === options.progress);
           const finish = calls.filter(call => call.function.name === options.finish);
           const external = calls.filter(call => call.function.name !== options.progress && call.function.name !== options.finish);
-          if (next.message.content) delta({ content: next.message.content });
           if (next.finish === "length") {
             send({ choices: [{ index: 0, delta: {}, finish_reason: "length" }] });
             break;
           }
-          for (const call of progress) {
+          if (finish.length > 1) throw new Error("Multiple agent finish controls");
+          let finishArgs: any;
+          if (finish.length) {
+            finishArgs = JSON.parse(finish[0].function.arguments);
+            if (!["complete", "blocked", "needs_input", "stopped"].includes(finishArgs.status) || typeof finishArgs.message !== "string" || !finishArgs.message.trim()) throw new Error("Invalid agent finish control");
+          }
+          if (finishArgs && (!external.length || finishArgs.status !== "complete")) {
+            delta({ content: finishArgs.message });
+            send({ choices: [{ index: 0, delta: {}, finish_reason: "stop" }] });
+            break;
+          }
+          // A completed finish can race with a caller action when the model emits
+          // parallel tools. Prefer the caller action and let the next turn decide
+          // whether the task is complete after seeing that action's result.
+          if (!finishArgs && next.message.content) delta({ content: next.message.content });
+          if (!finishArgs) for (const call of progress) {
             const args = JSON.parse(call.function.arguments);
             if (typeof args.message !== "string" || !args.message.trim()) throw new Error("Invalid agent progress control");
             delta({ content: `${args.message}\n\n` });
           }
-          if (finish.length && (external.length || finish.length > 1)) throw new Error("Conflicting agent finish and tool actions");
           if (external.length) {
             delta({ tool_calls: external.map((call, index) => ({ ...call, index })) });
             send({ choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }] });
-            break;
-          }
-          if (finish.length) {
-            const args = JSON.parse(finish[0].function.arguments);
-            if (!["complete", "blocked", "needs_input", "stopped"].includes(args.status) || typeof args.message !== "string" || !args.message.trim()) throw new Error("Invalid agent finish control");
-            delta({ content: args.message });
-            send({ choices: [{ index: 0, delta: {}, finish_reason: "stop" }] });
             break;
           }
           const outputLimit = options.body.max_completion_tokens ?? options.body.max_tokens;

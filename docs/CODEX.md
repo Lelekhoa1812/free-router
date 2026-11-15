@@ -8,7 +8,11 @@ In observed desktop rollouts the gateway returned successful responses, but the 
 
 For the narrowly scoped Codex/Nemotron request shape documented in [API_CONTRACTS.md](API_CONTRACTS.md), private progress and finish functions give the Chat model an explicit turn protocol. The gateway continues only a declared private progress action; it does not infer unfinished work from English text. Caller actions still execute in Codex. Required upstream tool selection prevents unmarked progress text from silently becoming a final answer. Deliberate final answers, blockers, permission questions and user stops remain valid outcomes. Repeated progress has a bounded failure path rather than an endless continuation loop.
 
-The 15 November 2026 production probe recovered from its deliberate tool error and completed all six sequential synthetic tool actions at medium reasoning effort. Its final receipt request exceeded the probe's 180-second client timeout, so this verifies continued tool execution but does not certify complete long-run success. A high-effort run separately reached its 16,384-token output cap. Neither outcome is evidence that a live business-MCP workflow completed.
+If the model emits its `complete` finish control in parallel with a caller tool, the gateway drops the premature finish and returns the caller tool so the client can execute it. A `blocked`, `needs_input` or `stopped` finish suppresses concurrent caller actions. This avoids a stream failure from conflicting finish/tool calls while preserving a real stop or permission boundary.
+
+On 15 November 2026, the high/medium-effort production probe completed its six tool actions but returned `response.incomplete` after exhausting the probe's 32,768-token output cap. An isolated medium-effort finish also consumed that cap; an isolated low-effort finish returned its receipt in about seven seconds. The affected desktop rollout and saved config were set to high effort. After setting the saved Codex default to low, the full production probe passed with a 131,072-token output ceiling: six sequential synthetic checks completed, one deliberate tool error was recovered, and the final receipt was verified. This confirms the immediate failure mode was reasoning/output budget exhaustion rather than a gateway hang. Real KQA/business-MCP workflows remain unverified.
+
+An installed-Codex low-effort retest also completed six local fixture checks, then exposed a second adapter edge case: the model emitted a `complete` finish control and a caller tool call in parallel, which the gateway rejected. The bridge now forwards the caller action and defers completion until its result is available; a production installed-client retest is required after deployment.
 
 Run the bounded synthetic acceptance probe against a running local production build:
 
@@ -18,7 +22,7 @@ pnpm start --port 3107
 pnpm smoke:codex-agent
 ```
 
-For production, set `FREEROUTER_BASE_URL=https://free-router-olive.vercel.app` before the same probe. It uses six sequential synthetic checks at medium reasoning effort with a 32,768-token output ceiling, deliberately returns one protocol error, and verifies the tool-issued final receipt. It never executes business MCP tools or shell commands. It fails immediately if a progress-only final answer arrives before all checks pass. This is a bounded model acceptance test; it cannot guarantee arbitrary tasks or unlimited-session reliability.
+For production, set `FREEROUTER_BASE_URL=https://free-router-olive.vercel.app` before the same probe. It uses six sequential synthetic checks (low effort by default; override with `FREEROUTER_REASONING_EFFORT`) with a 131,072-token output ceiling, deliberately returns one protocol error, and verifies the tool-issued final receipt. It never executes business MCP tools or shell commands. It fails immediately if a progress-only final answer arrives before all checks pass. This is a bounded model acceptance test; it cannot guarantee arbitrary tasks or unlimited-session reliability.
 
 ## A turn says its goal budget was exhausted
 
